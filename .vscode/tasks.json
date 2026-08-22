@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Michi Admin API: Run",
+      "type": "shell",
+      "command": "./gradlew run",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Michi Admin API: Run (Debug JVM 5005)",
+      "type": "shell",
+      "command": "./gradlew run --debug-jvm",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Michi Admin API: Test",
+      "type": "shell",
+      "command": "./gradlew test",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Michi Admin API: Build",
+      "type": "shell",
+      "command": "./gradlew build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Michi Admin API: Verify",
+      "type": "shell",
+      "command": "./gradlew clean check build",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}
