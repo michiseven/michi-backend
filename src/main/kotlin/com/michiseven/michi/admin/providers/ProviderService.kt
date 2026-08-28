@@ -21,6 +21,10 @@ data class ProviderStatusResponse(
     val tourismDataLab: String, // live | mock | unavailable
     val crowd: String,          // live | mock | unavailable
     val llm: String,            // live | mock | unavailable
+    val routing: String,        // live | mock | unavailable
+    val accessibility: String,  // live | unavailable
+    val placeSource: String?,
+    val crowdSource: String?,
     val checkedAt: String,
     val publicApiStatus: String // connected | unavailable
 )
@@ -47,6 +51,7 @@ open class ProviderService(
                 val body = response.bodyAsText()
                 val parsed = json.parseToJsonElement(body).jsonObject
                 val providerModes = parsed["providerModes"]?.jsonObject
+                val providerSources = parsed["providerSources"]?.jsonObject
 
                 fun extractMode(key: String): String {
                     val raw = providerModes?.get(key)?.jsonPrimitive?.content
@@ -59,6 +64,11 @@ open class ProviderService(
                     tourismDataLab = extractMode("tourismDataLab"),
                     crowd = extractMode("crowd"),
                     llm = extractMode("llm"),
+                    routing = extractMode("routing"),
+                    accessibility = providerModes?.get("accessibility")?.jsonPrimitive?.content
+                        ?.takeIf { it == "live" || it == "unavailable" } ?: "unavailable",
+                    placeSource = providerSources?.get("place")?.jsonPrimitive?.content,
+                    crowdSource = providerSources?.get("crowd")?.jsonPrimitive?.content,
                     checkedAt = now,
                     publicApiStatus = "connected"
                 )
@@ -78,6 +88,10 @@ open class ProviderService(
             tourismDataLab = "unavailable",
             crowd = "unavailable",
             llm = "unavailable",
+            routing = "unavailable",
+            accessibility = "unavailable",
+            placeSource = null,
+            crowdSource = null,
             checkedAt = checkedAt,
             publicApiStatus = "unavailable"
         )

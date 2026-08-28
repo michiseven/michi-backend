@@ -21,6 +21,8 @@ val hikariVersion = "6.2.1"
 val postgresVersion = "42.7.5"
 val junitVersion = "5.11.4"
 val testcontainersVersion = "1.20.4"
+val flywayVersion = "13.0.0"
+val argon2Version = "2.11"
 
 dependencies {
     // Ktor Server Core & Netty
@@ -41,6 +43,9 @@ dependencies {
     // Database & Connection Pooling
     implementation("com.zaxxer:HikariCP:$hikariVersion")
     implementation("org.postgresql:postgresql:$postgresVersion")
+    implementation("org.flywaydb:flyway-core:$flywayVersion")
+    implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
+    implementation("de.mkammerer:argon2-jvm:$argon2Version")
 
     // Logging
     implementation("ch.qos.logback:logback-classic:$logbackVersion")
@@ -64,4 +69,18 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<JavaExec>("migrateAdminSchema") {
+    group = "database"
+    description = "Applies Flyway migrations for the admin identity schema."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.michiseven.michi.admin.database.AdminMigrationMainKt")
+}
+
+tasks.register<JavaExec>("bootstrapAdminOwner") {
+    group = "application"
+    description = "Creates the first Michi Admin owner from ADMIN_BOOTSTRAP_* variables."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.michiseven.michi.admin.auth.AdminBootstrapMainKt")
 }

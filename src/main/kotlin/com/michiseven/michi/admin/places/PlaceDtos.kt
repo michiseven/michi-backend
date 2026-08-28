@@ -15,6 +15,9 @@ data class PlaceListItemDto(
     val latitude: Double?,
     val longitude: Double?,
     val coordinateStatus: String,
+    val estimatedCostKrw: Int?,
+    val priceEvidenceSource: String?,
+    val priceEvidenceVerificationStatus: String?,
     val tourismMetricCount: Long,
     val latestTourismPeriod: String?,
     val createdAt: String,
@@ -45,6 +48,10 @@ data class PlaceDetailDto(
     val latitude: Double?,
     val longitude: Double?,
     val coordinateStatus: String,
+    val estimatedCostKrw: Int?,
+    val priceEvidenceSource: String?,
+    val priceEvidenceVerificationStatus: String?,
+    val priceEvidence: JsonElement?,
     val tourismMetricCount: Long,
     val latestTourismPeriod: String?,
     val tourismMetrics: List<TourismMetricSummaryDto>,
@@ -58,5 +65,6 @@ data class PlaceFilter(
     val provider: String? = null,
     val category: String? = null,
     val coordinateStatus: String? = null, // all | present | missing
-    val tourismMetricStatus: String? = null // all | linked | unlinked
+    val tourismMetricStatus: String? = null, // all | linked | unlinked
+    val priceEvidenceStatus: String? = null // all | verified | unverified | missing
 )

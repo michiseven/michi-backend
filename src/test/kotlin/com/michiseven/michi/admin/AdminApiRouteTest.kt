@@ -70,6 +70,10 @@ class AdminApiRouteTest {
                     tourismDataLab = "mock",
                     crowd = "live",
                     llm = "mock",
+                    routing = "live",
+                    accessibility = "unavailable",
+                    placeSource = "kakao-local",
+                    crowdSource = "seoul-open-data",
                     checkedAt = "2026-08-22T00:00:00Z",
                     publicApiStatus = "connected"
                 )
@@ -105,6 +109,10 @@ class AdminApiRouteTest {
                     tourismDataLab = "mock",
                     crowd = "live",
                     llm = "mock",
+                    routing = "live",
+                    accessibility = "unavailable",
+                    placeSource = "kakao-local",
+                    crowdSource = "seoul-open-data",
                     checkedAt = "2026-08-22T00:00:00Z",
                     publicApiStatus = "connected"
                 )
@@ -122,6 +130,7 @@ class AdminApiRouteTest {
         assertEquals("mock", parsed["place"]?.jsonPrimitive?.content)
         assertEquals("live", parsed["kto"]?.jsonPrimitive?.content)
         assertEquals("connected", parsed["publicApiStatus"]?.jsonPrimitive?.content)
+        assertEquals("kakao-local", parsed["placeSource"]?.jsonPrimitive?.content)
     }
 
     @Test

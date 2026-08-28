@@ -1,6 +1,7 @@
 package com.michiseven.michi.admin.dashboard
 
 import com.michiseven.michi.admin.database.withReadOnlyConnection
+import com.michiseven.michi.admin.places.PlaceSources
 import kotlinx.serialization.Serializable
 import javax.sql.DataSource
 
@@ -9,7 +10,21 @@ data class PlaceSummary(
     val total: Long,
     val withoutLocation: Long,
     val kto: Long,
-    val naver: Long
+    val naver: Long,
+    val kakao: Long,
+    val mock: Long,
+    val other: Long,
+    val verifiedPriceRecords: Long,
+    val unverifiedPriceRecords: Long,
+    val bySource: Map<String, Long>
+)
+
+@Serializable
+data class MembersSummary(
+    val total: Long,
+    val active: Long,
+    val savedTrips: Long,
+    val latestRegisteredAt: String?
 )
 
 @Serializable
@@ -37,35 +52,72 @@ data class AdminDashboardSummary(
     val places: PlaceSummary,
     val tourismMetrics: TourismMetricsSummary,
     val imports: ImportsSummary,
-    val evaluations: EvaluationsSummary
+    val evaluations: EvaluationsSummary,
+    val members: MembersSummary
 )
 
 class DashboardRepository(private val dataSource: DataSource) {
 
     fun getSummary(): AdminDashboardSummary {
         return dataSource.withReadOnlyConnection { conn ->
-            // Places summary
+            // 장소 제공자는 고정 목록이 아니라 DB의 실제 source 값을 기준으로 집계한다.
             var totalPlaces = 0L
             var withoutLocation = 0L
             var ktoPlaces = 0L
             var naverPlaces = 0L
+            var kakaoPlaces = 0L
+            var mockPlaces = 0L
+            var verifiedPriceRecords = 0L
+            var unverifiedPriceRecords = 0L
+            val bySource = linkedMapOf<String, Long>()
 
             val placeSql = """
                 SELECT 
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE location IS NULL) as without_location,
-                    COUNT(*) FILTER (WHERE source = 'kto') as kto_count,
-                    COUNT(*) FILTER (WHERE source = 'naver') as naver_count
+                    COUNT(*) FILTER (WHERE source = ?) as kto_count,
+                    COUNT(*) FILTER (WHERE source = ?) as naver_count,
+                    COUNT(*) FILTER (WHERE source = ?) as kakao_count,
+                    COUNT(*) FILTER (WHERE source = ?) as mock_count,
+                    COUNT(*) FILTER (
+                        WHERE estimated_cost_krw IS NOT NULL
+                          AND price_evidence->>'verificationStatus' = 'verified'
+                          AND price_evidence->>'source' IN ('kakao-place-menu', 'kto-detail', 'manual')
+                    ) as verified_price_records,
+                    COUNT(*) FILTER (
+                        WHERE (estimated_cost_krw IS NOT NULL OR price_evidence IS NOT NULL)
+                          AND NOT (
+                            estimated_cost_krw IS NOT NULL
+                            AND price_evidence->>'verificationStatus' = 'verified'
+                            AND price_evidence->>'source' IN ('kakao-place-menu', 'kto-detail', 'manual')
+                          )
+                    ) as unverified_price_records
                 FROM places
             """.trimIndent()
 
             conn.prepareStatement(placeSql).use { stmt ->
+                stmt.setString(1, PlaceSources.KTO)
+                stmt.setString(2, PlaceSources.NAVER)
+                stmt.setString(3, PlaceSources.KAKAO)
+                stmt.setString(4, PlaceSources.MOCK)
                 stmt.executeQuery().use { rs ->
                     if (rs.next()) {
                         totalPlaces = rs.getLong("total")
                         withoutLocation = rs.getLong("without_location")
                         ktoPlaces = rs.getLong("kto_count")
                         naverPlaces = rs.getLong("naver_count")
+                        kakaoPlaces = rs.getLong("kakao_count")
+                        mockPlaces = rs.getLong("mock_count")
+                        verifiedPriceRecords = rs.getLong("verified_price_records")
+                        unverifiedPriceRecords = rs.getLong("unverified_price_records")
+                    }
+                }
+            }
+
+            conn.prepareStatement("SELECT source, COUNT(*) AS count FROM places GROUP BY source ORDER BY source").use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        bySource[rs.getString("source")] = rs.getLong("count")
                     }
                 }
             }
@@ -150,12 +202,41 @@ class DashboardRepository(private val dataSource: DataSource) {
                 }
             }
 
+            var totalMembers = 0L
+            var activeMembers = 0L
+            var savedTrips = 0L
+            var latestRegisteredAt: String? = null
+            conn.prepareStatement(
+                """
+                    SELECT
+                        (SELECT COUNT(*) FROM users) AS total,
+                        (SELECT COUNT(*) FROM users WHERE is_active = true) AS active,
+                        (SELECT COUNT(*) FROM user_saved_trips) AS saved_trips,
+                        (SELECT MAX(created_at) FROM users) AS latest_registered_at
+                """.trimIndent()
+            ).use { stmt ->
+                stmt.executeQuery().use { rs ->
+                    if (rs.next()) {
+                        totalMembers = rs.getLong("total")
+                        activeMembers = rs.getLong("active")
+                        savedTrips = rs.getLong("saved_trips")
+                        latestRegisteredAt = rs.getTimestamp("latest_registered_at")?.toInstant()?.toString()
+                    }
+                }
+            }
+
             AdminDashboardSummary(
                 places = PlaceSummary(
                     total = totalPlaces,
                     withoutLocation = withoutLocation,
                     kto = ktoPlaces,
-                    naver = naverPlaces
+                    naver = naverPlaces,
+                    kakao = kakaoPlaces,
+                    mock = mockPlaces,
+                    other = totalPlaces - ktoPlaces - naverPlaces - kakaoPlaces - mockPlaces,
+                    verifiedPriceRecords = verifiedPriceRecords,
+                    unverifiedPriceRecords = unverifiedPriceRecords,
+                    bySource = bySource
                 ),
                 tourismMetrics = TourismMetricsSummary(
                     total = totalMetrics,
@@ -170,6 +251,12 @@ class DashboardRepository(private val dataSource: DataSource) {
                 evaluations = EvaluationsSummary(
                     total = totalEvaluations,
                     latestGeneratedAt = latestGeneratedAt
+                ),
+                members = MembersSummary(
+                    total = totalMembers,
+                    active = activeMembers,
+                    savedTrips = savedTrips,
+                    latestRegisteredAt = latestRegisteredAt
                 )
             )
         }

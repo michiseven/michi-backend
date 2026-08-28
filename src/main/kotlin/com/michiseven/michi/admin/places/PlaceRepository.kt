@@ -5,7 +5,9 @@ import com.michiseven.michi.admin.common.PageResponse
 import com.michiseven.michi.admin.common.ResourceNotFoundException
 import com.michiseven.michi.admin.database.withReadOnlyConnection
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import java.sql.ResultSet
 import java.util.UUID
 import javax.sql.DataSource
@@ -18,6 +20,7 @@ class PlaceRepository(private val dataSource: DataSource) {
             "updatedAt" to "p.updated_at",
             "name" to "p.name",
             "provider" to "p.source",
+            "estimatedCost" to "p.estimated_cost_krw",
             "createdAt" to "p.created_at"
         )
     }
@@ -36,9 +39,10 @@ class PlaceRepository(private val dataSource: DataSource) {
                 params.add(q)
             }
 
-            if (!filter.provider.isNullOrBlank() && filter.provider != "all") {
+            val normalizedProvider = PlaceSources.normalizeFilter(filter.provider)
+            if (normalizedProvider != null) {
                 whereClauses.add("p.source = ?")
-                params.add(filter.provider.trim())
+                params.add(normalizedProvider)
             }
 
             if (!filter.category.isNullOrBlank() && filter.category != "all") {
@@ -54,6 +58,12 @@ class PlaceRepository(private val dataSource: DataSource) {
             when (filter.tourismMetricStatus?.lowercase()) {
                 "linked" -> whereClauses.add("EXISTS (SELECT 1 FROM tourism_metrics tm WHERE tm.place_id = p.id)")
                 "unlinked" -> whereClauses.add("NOT EXISTS (SELECT 1 FROM tourism_metrics tm WHERE tm.place_id = p.id)")
+            }
+
+            when (filter.priceEvidenceStatus?.lowercase()) {
+                "verified" -> whereClauses.add("p.estimated_cost_krw IS NOT NULL AND p.price_evidence->>'verificationStatus' = 'verified' AND p.price_evidence->>'source' IN ('kakao-place-menu', 'kto-detail', 'manual')")
+                "unverified" -> whereClauses.add("(p.estimated_cost_krw IS NOT NULL OR p.price_evidence IS NOT NULL) AND NOT (p.estimated_cost_krw IS NOT NULL AND p.price_evidence->>'verificationStatus' = 'verified' AND p.price_evidence->>'source' IN ('kakao-place-menu', 'kto-detail', 'manual'))")
+                "missing" -> whereClauses.add("p.estimated_cost_krw IS NULL AND p.price_evidence IS NULL")
             }
 
             val whereSql = if (whereClauses.isNotEmpty()) "WHERE " + whereClauses.joinToString(" AND ") else ""
@@ -79,6 +89,9 @@ class PlaceRepository(private val dataSource: DataSource) {
                     p.category,
                     p.address,
                     p.road_address,
+                    p.estimated_cost_krw,
+                    p.price_evidence->>'source' as price_evidence_source,
+                    p.price_evidence->>'verificationStatus' as price_evidence_verification_status,
                     ST_Y(p.location::geometry) as latitude,
                     ST_X(p.location::geometry) as longitude,
                     p.created_at,
@@ -153,6 +166,8 @@ class PlaceRepository(private val dataSource: DataSource) {
                     ST_Y(p.location::geometry) as latitude,
                     ST_X(p.location::geometry) as longitude,
                     p.raw_payload,
+                    p.estimated_cost_krw,
+                    p.price_evidence,
                     p.created_at,
                     p.updated_at
                 FROM places p
@@ -178,6 +193,7 @@ class PlaceRepository(private val dataSource: DataSource) {
                                 null
                             }
                         } else null
+                        val priceEvidence = parseJsonElement(rs.getString("price_evidence"))
 
                         detail = PlaceDetailDto(
                             id = rs.getString("id"),
@@ -192,6 +208,10 @@ class PlaceRepository(private val dataSource: DataSource) {
                             latitude = lat,
                             longitude = lng,
                             coordinateStatus = coordStatus,
+                            estimatedCostKrw = (rs.getObject("estimated_cost_krw") as? Number)?.toInt(),
+                            priceEvidenceSource = priceEvidenceSource(priceEvidence),
+                            priceEvidenceVerificationStatus = priceEvidenceVerificationStatus(priceEvidence),
+                            priceEvidence = sanitizeMetadata(priceEvidence),
                             tourismMetricCount = 0,
                             latestTourismPeriod = null,
                             tourismMetrics = emptyList(),
@@ -278,6 +298,9 @@ class PlaceRepository(private val dataSource: DataSource) {
             latitude = lat,
             longitude = lng,
             coordinateStatus = coordStatus,
+            estimatedCostKrw = (rs.getObject("estimated_cost_krw") as? Number)?.toInt(),
+            priceEvidenceSource = rs.getString("price_evidence_source"),
+            priceEvidenceVerificationStatus = rs.getString("price_evidence_verification_status"),
             tourismMetricCount = rs.getLong("metric_count"),
             latestTourismPeriod = rs.getString("latest_period"),
             createdAt = rs.getTimestamp("created_at").toInstant().toString(),
@@ -285,8 +308,33 @@ class PlaceRepository(private val dataSource: DataSource) {
         )
     }
 
-    private fun sanitizeMetadata(element: JsonElement?): JsonElement? {
-        // Exclude credentials or upstream request URLs if any exist in raw payload
-        return element
+    private fun parseJsonElement(raw: String?): JsonElement? {
+        if (raw.isNullOrBlank()) return null
+        return try {
+            json.parseToJsonElement(raw)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    internal fun sanitizeMetadata(element: JsonElement?): JsonElement? {
+        val sensitiveKey = Regex("(?i)(password|secret|token|authorization|api[_-]?key|client[_-]?secret|credential)")
+        return when (element) {
+            is JsonObject -> JsonObject(
+                element.entries
+                    .filterNot { (key, _) -> sensitiveKey.containsMatchIn(key) }
+                    .associate { (key, value) -> key to (sanitizeMetadata(value) ?: value) }
+            )
+            is JsonArray -> JsonArray(element.map { sanitizeMetadata(it) ?: it })
+            else -> element
+        }
+    }
+
+    private fun priceEvidenceSource(element: JsonElement?): String? {
+        return (element as? JsonObject)?.get("source")?.toString()?.trim('"')
+    }
+
+    private fun priceEvidenceVerificationStatus(element: JsonElement?): String? {
+        return (element as? JsonObject)?.get("verificationStatus")?.toString()?.trim('"')
     }
 }

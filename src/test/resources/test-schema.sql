@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS places (
     district VARCHAR(80),
     raw_category VARCHAR(500),
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    estimated_cost_krw INTEGER,
+    price_evidence JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_places_source_source_place_id UNIQUE (source, source_place_id)
@@ -85,4 +87,28 @@ CREATE TABLE IF NOT EXISTS recommendation_evaluations (
     source_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
     random_seed INTEGER,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    display_name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    locale VARCHAR(8) NOT NULL DEFAULT 'ja',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_saved_trips (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    trip_id UUID NOT NULL,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    travel_date VARCHAR(40) NOT NULL DEFAULT '',
+    stops_count INTEGER NOT NULL DEFAULT 0,
+    estimated_total_cost INTEGER,
+    trip_snapshot JSONB,
+    memo TEXT,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

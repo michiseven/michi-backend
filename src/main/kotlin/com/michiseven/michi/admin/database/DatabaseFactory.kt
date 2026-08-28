@@ -32,6 +32,29 @@ object DatabaseFactory {
         logger.info("Initializing read-only database pool for database: {}", config.databaseName)
         return HikariDataSource(hikariConfig)
     }
+
+    fun createAdminDataSource(config: DatabaseConfig): DataSource {
+        require(!config.readOnly) { "Admin database config must allow writes inside the admin schema." }
+
+        val hikariConfig = HikariConfig().apply {
+            jdbcUrl = config.safeJdbcUrl()
+            username = config.username
+            password = config.password
+            maximumPoolSize = config.maximumPoolSize
+            minimumIdle = config.minimumIdle
+            connectionTimeout = config.connectionTimeoutMs
+            isReadOnly = false
+            poolName = "MichiAdminIdentityHikariPool"
+            connectionInitSql = "SET search_path TO admin, public"
+
+            addDataSourceProperty("cachePrepStmts", "true")
+            addDataSourceProperty("prepStmtCacheSize", "250")
+            addDataSourceProperty("prepStmtCacheSqlLimit", "2048")
+        }
+
+        logger.info("Initializing admin identity database pool for database: {}", config.databaseName)
+        return HikariDataSource(hikariConfig)
+    }
 }
 
 fun <T> DataSource.withReadOnlyConnection(block: (Connection) -> T): T {
