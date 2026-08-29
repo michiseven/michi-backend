@@ -89,7 +89,7 @@ class DatabaseIntegrationTest {
                     INSERT INTO tourism_metrics (id, source_id, import_run_id, place_id, metric_type, value, unit, period_start, period_end, dimension_key)
                     VALUES ('55555555-5555-5555-5555-555555555555', '33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444', '11111111-1111-1111-1111-111111111111', 'tourism_concentration', 0.65, 'ratio', '2026-07-01', '2026-07-31', 'dimkey123456789012345678901234567890123456789012345678901234567890');
 
-                    INSERT INTO recommendation_evaluations (id, scenario_key, preference_snapshot, candidate_snapshot, data_mode, baseline_algorithm_version, michiAlgorithmVersion, baseline_metrics, michi_metrics, delta)
+                    INSERT INTO recommendation_evaluations (id, scenario_key, preference_snapshot, candidate_snapshot, data_mode, baseline_algorithm_version, michi_algorithm_version, baseline_metrics, michi_metrics, delta)
                     VALUES ('66666666-6666-6666-6666-666666666666', 'sc-1', '{"area": "Jongno-gu", "travelDate": "2026-08-22"}'::jsonb, '[{"placeId": "kto-101", "source": "${PlaceSources.KTO}", "tourismConcentration": 0.65}]'::jsonb, 'live', 'baseline-v1', 'michi-v1', '{"tourismConcentrationScore": 0.75, "nonHotspotInclusionRate": 0.1}'::jsonb, '{"tourismConcentrationScore": 0.45, "nonHotspotInclusionRate": 0.5}'::jsonb, '{"concentrationReduction": 0.3}'::jsonb);
                 """.trimIndent())
             }
