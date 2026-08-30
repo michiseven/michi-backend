@@ -1,6 +1,9 @@
-.gradle/
-build/
-bin/
+node_modules/
+dist/
+coverage/
 .env
 *.log
-.DS_Store
+.gradle/
+.kotlin/
+build/
+bin/

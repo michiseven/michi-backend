@@ -1,0 +1,1177 @@
+{
+  "title": "Michi LIVE Evaluation Coverage & Reliability Audit",
+  "executedAt": "2026-08-26T14:00:12.274Z",
+  "algorithmVersion": "expected-dispersion-effect-v1",
+  "runsPerScenario": 2,
+  "overallDeterminism": true,
+  "determinismStatus": "pass",
+  "overallDataMode": "live",
+  "latestImport": {
+    "importRunId": "446898c5-b155-4202-8348-789c3bb70e7a",
+    "referencePeriod": "2026-08-26~2026-09-24",
+    "completedAt": "2026-08-26T11:43:56.548Z",
+    "mode": "live",
+    "totalKtoPlaces": 683,
+    "ktoPlacesWithConcentration": 146,
+    "ktoPlaceCoverageRatio": 0.2138,
+    "metricRows": 4380
+  },
+  "matching": {
+    "status": "available",
+    "districts": 25,
+    "pages": 25,
+    "fetched": 20250,
+    "rejectedByProvider": 0,
+    "matchedRows": 4380,
+    "matchedPlaces": 146,
+    "unmatchedAttractions": 528,
+    "ambiguousAttractions": 1,
+    "matchingPolicyVersion": "kto-datalab-matching-v2-paren-alias",
+    "unavailableReason": null
+  },
+  "dataSourceSummary": {
+    "datasetKey": "kto-datalab-tourism-concentration-forecast",
+    "referencePeriod": "2026-08-26~2026-09-24",
+    "totalKtoPlaces": 683,
+    "ktoPlacesWithConcentration": 146,
+    "ktoPlaceCoverageRatio": 0.2138,
+    "totalConcentrationRows": 4380,
+    "latestImportAt": "2026-08-26T11:43:56.548Z",
+    "mode": "live"
+  },
+  "overallCoverage": {
+    "totalCandidates": 235,
+    "candidatesWithConcentration": 43,
+    "candidateCoverageRatio": 0.183,
+    "totalBaselineSelected": 15,
+    "baselineSelectedWithConcentration": 2,
+    "baselineCoverageRatio": 0.1333,
+    "totalMichiSelected": 15,
+    "michiSelectedWithConcentration": 0,
+    "michiCoverageRatio": 0,
+    "evidenceStatusCounts": {
+      "available": 0,
+      "partial": 5,
+      "unavailable": 0
+    },
+    "evidenceStatusRatios": {
+      "available": 0,
+      "partial": 1,
+      "unavailable": 0
+    }
+  },
+  "scenarios": [
+    {
+      "scenarioId": "cafe-shopping-young-adult",
+      "label": "20대 / 카페 / 쇼핑",
+      "runs": 2,
+      "deterministic": true,
+      "determinismStatus": "pass",
+      "dataMode": "live",
+      "evidenceStatus": "partial",
+      "totalCandidates": 50,
+      "candidatesWithConcentration": 5,
+      "candidateCoverageRatio": 0.1,
+      "baselineSelectedCount": 3,
+      "baselineSelectedWithConcentration": 0,
+      "baselineCoverageRatio": 0,
+      "michiSelectedCount": 3,
+      "michiSelectedWithConcentration": 0,
+      "michiCoverageRatio": 0,
+      "baselineStops": [
+        {
+          "placeName": "オングンダル（옹근달）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "베통 성수",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "聖水洞大林倉庫ギャラリー（성수동 대림창고 갤러리）",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "michiStops": [
+        {
+          "placeName": "オングンダル（옹근달）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "베통 성수",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "聖水洞大林倉庫ギャラリー（성수동 대림창고 갤러리）",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "delta": {
+        "averagePreferenceScore": 0,
+        "tourismConcentrationScore": null,
+        "nonHotspotInclusionRate": null,
+        "averageTravelDistanceKm": 0,
+        "averageTravelTimeMinutes": 0,
+        "localImpactScore": null
+      },
+      "expectedEffect": {
+        "algorithmVersion": "expected-dispersion-effect-v1",
+        "claimScope": "recommendation_estimate",
+        "evidenceStatus": "partial",
+        "concentrationReduction": null,
+        "nonHotspotInclusionLift": null,
+        "preferenceChange": 0,
+        "extraTravelDistanceKm": 0,
+        "extraTravelTimeMinutes": 0,
+        "localImpactLift": null
+      },
+      "evidenceControlledBenchmark": {
+        "algorithmVersion": "evidence-controlled-benchmark-v1",
+        "status": "unavailable",
+        "candidatePool": {
+          "totalCandidates": 50,
+          "candidatesWithConcentration": 5,
+          "excludedMissingConcentration": 45,
+          "excludedBelowPreferenceThreshold": 5,
+          "eligibleCandidates": 0,
+          "requestedSelectionCount": 3,
+          "evaluatedSelectionCount": 0
+        },
+        "baseline": {
+          "algorithmVersion": "baseline-preference-popularity-distance-time-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "tourismConcentrationScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "nonHotspotInclusionRate": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelDistanceKm": {
+              "value": null,
+              "unit": "km",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelTimeMinutes": {
+              "value": null,
+              "unit": "minutes",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "localImpactScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            }
+          },
+          "route": {
+            "stops": []
+          }
+        },
+        "michi": {
+          "algorithmVersion": "michi-tourism-dispersion-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "tourismConcentrationScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "nonHotspotInclusionRate": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelDistanceKm": {
+              "value": null,
+              "unit": "km",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelTimeMinutes": {
+              "value": null,
+              "unit": "minutes",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "localImpactScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            }
+          },
+          "route": {
+            "stops": []
+          }
+        },
+        "delta": {
+          "averagePreferenceScore": null,
+          "tourismConcentrationScore": null,
+          "nonHotspotInclusionRate": null,
+          "averageTravelDistanceKm": null,
+          "averageTravelTimeMinutes": null,
+          "localImpactScore": null
+        },
+        "expectedEffect": {
+          "algorithmVersion": "expected-dispersion-effect-v1",
+          "claimScope": "recommendation_estimate",
+          "evidenceStatus": "unavailable",
+          "concentrationReduction": null,
+          "nonHotspotInclusionLift": null,
+          "preferenceChange": null,
+          "extraTravelDistanceKm": null,
+          "extraTravelTimeMinutes": null,
+          "localImpactLift": null
+        }
+      },
+      "dataSources": [
+        {
+          "sourceRef": "kto-datalab-tourism-concentration-forecast",
+          "sourceName": "한국관광공사",
+          "dataset": "관광지 집중률 방문자 추이 예측 정보",
+          "sourceUrl": "https://www.data.go.kr/data/15128555/openapi.do",
+          "referencePeriod": "2026-08-26~2026-08-26",
+          "importedAt": "2026-08-26T11:43:56.548Z",
+          "mode": "live"
+        }
+      ],
+      "warnings": [
+        "관광 집중도와 취향 기준을 모두 충족한 후보가 없어 근거 통제 비교를 수행하지 못했습니다.",
+        "이동 거리와 시간은 실제 길찾기가 아닌 직선거리·보행속도 기반 추정치입니다."
+      ]
+    },
+    {
+      "scenarioId": "solo-quiet",
+      "label": "혼자 / 조용한 장소",
+      "runs": 2,
+      "deterministic": true,
+      "determinismStatus": "pass",
+      "dataMode": "live",
+      "evidenceStatus": "partial",
+      "totalCandidates": 53,
+      "candidatesWithConcentration": 5,
+      "candidateCoverageRatio": 0.0943,
+      "baselineSelectedCount": 3,
+      "baselineSelectedWithConcentration": 2,
+      "baselineCoverageRatio": 0.6667,
+      "michiSelectedCount": 3,
+      "michiSelectedWithConcentration": 0,
+      "michiCoverageRatio": 0,
+      "baselineStops": [
+        {
+          "placeName": "聖水洞ハンドメイドシューズ通り（성수동 수제화거리）",
+          "concentrationLevel": "high"
+        },
+        {
+          "placeName": "水道博物館（수도박물관）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "狎鴎亭ロデオ通り（압구정 로데오거리）",
+          "concentrationLevel": "high"
+        }
+      ],
+      "michiStops": [
+        {
+          "placeName": "水道博物館（수도박물관）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "オングンダル（옹근달）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "UNDER STAND AVENUE（언더스탠드에비뉴）",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "delta": {
+        "averagePreferenceScore": 0,
+        "tourismConcentrationScore": null,
+        "nonHotspotInclusionRate": null,
+        "averageTravelDistanceKm": -0.467193,
+        "averageTravelTimeMinutes": -6.333334,
+        "localImpactScore": null
+      },
+      "expectedEffect": {
+        "algorithmVersion": "expected-dispersion-effect-v1",
+        "claimScope": "recommendation_estimate",
+        "evidenceStatus": "partial",
+        "concentrationReduction": null,
+        "nonHotspotInclusionLift": null,
+        "preferenceChange": 0,
+        "extraTravelDistanceKm": -0.467193,
+        "extraTravelTimeMinutes": -6.333334,
+        "localImpactLift": null
+      },
+      "evidenceControlledBenchmark": {
+        "algorithmVersion": "evidence-controlled-benchmark-v1",
+        "status": "available",
+        "candidatePool": {
+          "totalCandidates": 53,
+          "candidatesWithConcentration": 5,
+          "excludedMissingConcentration": 48,
+          "excludedBelowPreferenceThreshold": 0,
+          "eligibleCandidates": 5,
+          "requestedSelectionCount": 3,
+          "evaluatedSelectionCount": 3
+        },
+        "baseline": {
+          "algorithmVersion": "baseline-preference-popularity-distance-time-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 0.5,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.75,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 1.444416,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 20,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.34375,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "693a7681-5bcb-4aec-839e-4ba259389f1a",
+                "placeName": "聖水洞ハンドメイドシューズ通り（성수동 수제화거리）",
+                "arrivalAt": "12:00",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "12dd2ab2-3ef7-4c4c-9a7f-0052a8e9ec68",
+                "placeName": "狎鴎亭ロデオ通り（압구정 로데오거리）",
+                "arrivalAt": "13:32",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "ce1d387c-ce4d-43b3-819a-dd1ae8723c6a",
+                "placeName": "鷹峰山（ソウル）（응봉산（서울））",
+                "arrivalAt": "15:05",
+                "concentrationLevel": "medium"
+              }
+            ]
+          }
+        },
+        "michi": {
+          "algorithmVersion": "michi-tourism-dispersion-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 0.5,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.578767,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0.333333,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 1.419902,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 19.666667,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.450771,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "c803eca9-fecf-40e5-a45b-a243bf410d55",
+                "placeName": "清潭ファッション通り（청담패션거리）",
+                "arrivalAt": "12:00",
+                "concentrationLevel": "medium"
+              },
+              {
+                "placeId": "693a7681-5bcb-4aec-839e-4ba259389f1a",
+                "placeName": "聖水洞ハンドメイドシューズ通り（성수동 수제화거리）",
+                "arrivalAt": "13:30",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "ce1d387c-ce4d-43b3-819a-dd1ae8723c6a",
+                "placeName": "鷹峰山（ソウル）（응봉산（서울））",
+                "arrivalAt": "15:02",
+                "concentrationLevel": "medium"
+              }
+            ]
+          }
+        },
+        "delta": {
+          "averagePreferenceScore": 0,
+          "tourismConcentrationScore": -0.171233,
+          "nonHotspotInclusionRate": 0.333333,
+          "averageTravelDistanceKm": -0.024514,
+          "averageTravelTimeMinutes": -0.333333,
+          "localImpactScore": 0.107021
+        },
+        "expectedEffect": {
+          "algorithmVersion": "expected-dispersion-effect-v1",
+          "claimScope": "recommendation_estimate",
+          "evidenceStatus": "available",
+          "concentrationReduction": 0.171233,
+          "nonHotspotInclusionLift": 0.333333,
+          "preferenceChange": 0,
+          "extraTravelDistanceKm": -0.024514,
+          "extraTravelTimeMinutes": -0.333333,
+          "localImpactLift": 0.107021
+        }
+      },
+      "dataSources": [
+        {
+          "sourceRef": "kto-datalab-tourism-concentration-forecast",
+          "sourceName": "한국관광공사",
+          "dataset": "관광지 집중률 방문자 추이 예측 정보",
+          "sourceUrl": "https://www.data.go.kr/data/15128555/openapi.do",
+          "referencePeriod": "2026-08-26~2026-08-26",
+          "importedAt": "2026-08-26T11:43:56.548Z",
+          "mode": "live"
+        }
+      ],
+      "warnings": [
+        "이동 거리와 시간은 실제 길찾기가 아닌 직선거리·보행속도 기반 추정치입니다."
+      ]
+    },
+    {
+      "scenarioId": "couple-photo-night",
+      "label": "커플 / 사진 / 야경",
+      "runs": 2,
+      "deterministic": true,
+      "determinismStatus": "pass",
+      "dataMode": "live",
+      "evidenceStatus": "partial",
+      "totalCandidates": 45,
+      "candidatesWithConcentration": 8,
+      "candidateCoverageRatio": 0.1778,
+      "baselineSelectedCount": 3,
+      "baselineSelectedWithConcentration": 0,
+      "baselineCoverageRatio": 0,
+      "michiSelectedCount": 3,
+      "michiSelectedWithConcentration": 0,
+      "michiCoverageRatio": 0,
+      "baselineStops": [
+        {
+          "placeName": "Kleamクリニック (클림의원)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "ホンデid美容クリニック（홍대 아이디의원）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "MPLAYGROUND弘大本店（엠플레이그라운드 홍대본점 [Tax Refund Shop]）",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "michiStops": [
+        {
+          "placeName": "Kleamクリニック (클림의원)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "ホンデid美容クリニック（홍대 아이디의원）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "MPLAYGROUND弘大本店（엠플레이그라운드 홍대본점 [Tax Refund Shop]）",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "delta": {
+        "averagePreferenceScore": 0,
+        "tourismConcentrationScore": null,
+        "nonHotspotInclusionRate": null,
+        "averageTravelDistanceKm": 0,
+        "averageTravelTimeMinutes": 0,
+        "localImpactScore": null
+      },
+      "expectedEffect": {
+        "algorithmVersion": "expected-dispersion-effect-v1",
+        "claimScope": "recommendation_estimate",
+        "evidenceStatus": "partial",
+        "concentrationReduction": null,
+        "nonHotspotInclusionLift": null,
+        "preferenceChange": 0,
+        "extraTravelDistanceKm": 0,
+        "extraTravelTimeMinutes": 0,
+        "localImpactLift": null
+      },
+      "evidenceControlledBenchmark": {
+        "algorithmVersion": "evidence-controlled-benchmark-v1",
+        "status": "available",
+        "candidatePool": {
+          "totalCandidates": 45,
+          "candidatesWithConcentration": 8,
+          "excludedMissingConcentration": 37,
+          "excludedBelowPreferenceThreshold": 1,
+          "eligibleCandidates": 7,
+          "requestedSelectionCount": 3,
+          "evaluatedSelectionCount": 3
+        },
+        "baseline": {
+          "algorithmVersion": "baseline-preference-popularity-distance-time-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 1,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.756849,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 0.635371,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 9.666667,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.526969,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "d475b9fc-826f-4b66-81ed-b82888779b62",
+                "placeName": "弘大（홍대）",
+                "arrivalAt": "15:00",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "3c73dd5a-76c7-46ee-aa1d-9590f493fb6d",
+                "placeName": "京義線ブックストリート（경의선책거리）",
+                "arrivalAt": "16:09",
+                "concentrationLevel": "medium"
+              },
+              {
+                "placeId": "d8816ba0-75f7-48f9-81c7-d924620d9d26",
+                "placeName": "延世路（연세로）",
+                "arrivalAt": "17:18",
+                "concentrationLevel": "high"
+              }
+            ]
+          }
+        },
+        "michi": {
+          "algorithmVersion": "michi-tourism-dispersion-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 1,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.565068,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0.333333,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 0.753317,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 11.333333,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.646832,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "d475b9fc-826f-4b66-81ed-b82888779b62",
+                "placeName": "弘大（홍대）",
+                "arrivalAt": "15:00",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "3c73dd5a-76c7-46ee-aa1d-9590f493fb6d",
+                "placeName": "京義線ブックストリート（경의선책거리）",
+                "arrivalAt": "16:09",
+                "concentrationLevel": "medium"
+              },
+              {
+                "placeId": "f995045f-062e-4fe3-b26b-e1518cd554db",
+                "placeName": "望遠市場（망원시장）",
+                "arrivalAt": "17:37",
+                "concentrationLevel": "low"
+              }
+            ]
+          }
+        },
+        "delta": {
+          "averagePreferenceScore": 0,
+          "tourismConcentrationScore": -0.191781,
+          "nonHotspotInclusionRate": 0.333333,
+          "averageTravelDistanceKm": 0.117946,
+          "averageTravelTimeMinutes": 1.666666,
+          "localImpactScore": 0.119863
+        },
+        "expectedEffect": {
+          "algorithmVersion": "expected-dispersion-effect-v1",
+          "claimScope": "recommendation_estimate",
+          "evidenceStatus": "available",
+          "concentrationReduction": 0.191781,
+          "nonHotspotInclusionLift": 0.333333,
+          "preferenceChange": 0,
+          "extraTravelDistanceKm": 0.117946,
+          "extraTravelTimeMinutes": 1.666666,
+          "localImpactLift": 0.119863
+        }
+      },
+      "dataSources": [
+        {
+          "sourceRef": "kto-datalab-tourism-concentration-forecast",
+          "sourceName": "한국관광공사",
+          "dataset": "관광지 집중률 방문자 추이 예측 정보",
+          "sourceUrl": "https://www.data.go.kr/data/15128555/openapi.do",
+          "referencePeriod": "2026-08-26~2026-08-26",
+          "importedAt": "2026-08-26T11:43:56.548Z",
+          "mode": "live"
+        }
+      ],
+      "warnings": [
+        "이동 거리와 시간은 실제 길찾기가 아닌 직선거리·보행속도 기반 추정치입니다."
+      ]
+    },
+    {
+      "scenarioId": "first-seoul-landmarks",
+      "label": "첫 서울여행 / 대표 관광지",
+      "runs": 2,
+      "deterministic": true,
+      "determinismStatus": "pass",
+      "dataMode": "live",
+      "evidenceStatus": "partial",
+      "totalCandidates": 44,
+      "candidatesWithConcentration": 15,
+      "candidateCoverageRatio": 0.3409,
+      "baselineSelectedCount": 3,
+      "baselineSelectedWithConcentration": 0,
+      "baselineCoverageRatio": 0,
+      "michiSelectedCount": 3,
+      "michiSelectedWithConcentration": 0,
+      "michiCoverageRatio": 0,
+      "baselineStops": [
+        {
+          "placeName": "テンプルステイ広報館（템플스테이 홍보관）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "인사센트럴뮤지엄",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "KT 온마루",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "michiStops": [
+        {
+          "placeName": "テンプルステイ広報館（템플스테이 홍보관）",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "인사센트럴뮤지엄",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "KT 온마루",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "delta": {
+        "averagePreferenceScore": 0,
+        "tourismConcentrationScore": null,
+        "nonHotspotInclusionRate": null,
+        "averageTravelDistanceKm": 0,
+        "averageTravelTimeMinutes": 0,
+        "localImpactScore": null
+      },
+      "expectedEffect": {
+        "algorithmVersion": "expected-dispersion-effect-v1",
+        "claimScope": "recommendation_estimate",
+        "evidenceStatus": "partial",
+        "concentrationReduction": null,
+        "nonHotspotInclusionLift": null,
+        "preferenceChange": 0,
+        "extraTravelDistanceKm": 0,
+        "extraTravelTimeMinutes": 0,
+        "localImpactLift": null
+      },
+      "evidenceControlledBenchmark": {
+        "algorithmVersion": "evidence-controlled-benchmark-v1",
+        "status": "available",
+        "candidatePool": {
+          "totalCandidates": 44,
+          "candidatesWithConcentration": 15,
+          "excludedMissingConcentration": 29,
+          "excludedBelowPreferenceThreshold": 0,
+          "eligibleCandidates": 15,
+          "requestedSelectionCount": 3,
+          "evaluatedSelectionCount": 3
+        },
+        "baseline": {
+          "algorithmVersion": "baseline-preference-popularity-distance-time-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 1,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.902968,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 0.737123,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 10.333333,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.435645,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "a31fe245-6194-4504-b9d4-197b4dfcf006",
+                "placeName": "ソウル工芸博物館（서울공예박물관）",
+                "arrivalAt": "10:00",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "0e027ff8-a0c6-49b2-9174-1426b67f3317",
+                "placeName": "世宗文化会館（세종문화회관）",
+                "arrivalAt": "11:27",
+                "concentrationLevel": "high"
+              },
+              {
+                "placeId": "cd0c5ac8-f8a5-4b3b-82fc-118d4383162a",
+                "placeName": "貨幣博物館（화폐박물관）",
+                "arrivalAt": "12:58",
+                "concentrationLevel": "high"
+              }
+            ]
+          }
+        },
+        "michi": {
+          "algorithmVersion": "michi-tourism-dispersion-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": 1,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "tourismConcentrationScore": {
+              "value": 0.389269,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "nonHotspotInclusionRate": {
+              "value": 0.333333,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelDistanceKm": {
+              "value": 0.920527,
+              "unit": "km",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "averageTravelTimeMinutes": {
+              "value": 12.666667,
+              "unit": "minutes",
+              "status": "measured",
+              "sampleSize": 3
+            },
+            "localImpactScore": {
+              "value": 0.756706,
+              "unit": "ratio",
+              "status": "measured",
+              "sampleSize": 3
+            }
+          },
+          "route": {
+            "stops": [
+              {
+                "placeId": "35223595-bb46-4158-bd43-727a982710bf",
+                "placeName": "梨花女子高100周年記念館（이화여고100주년기념관）",
+                "arrivalAt": "10:00",
+                "concentrationLevel": "low"
+              },
+              {
+                "placeId": "ceac8362-49db-4e03-a27f-9592558767b7",
+                "placeName": "国立現代美術館 ソウル（국립현대미술관 서울）",
+                "arrivalAt": "11:37",
+                "concentrationLevel": "medium"
+              },
+              {
+                "placeId": "9da451f1-3da7-41a3-aba4-08679ab9e9e8",
+                "placeName": "餅博物館（떡박물관）",
+                "arrivalAt": "13:06",
+                "concentrationLevel": "medium"
+              }
+            ]
+          }
+        },
+        "delta": {
+          "averagePreferenceScore": 0,
+          "tourismConcentrationScore": -0.513699,
+          "nonHotspotInclusionRate": 0.333333,
+          "averageTravelDistanceKm": 0.183404,
+          "averageTravelTimeMinutes": 2.333334,
+          "localImpactScore": 0.321061
+        },
+        "expectedEffect": {
+          "algorithmVersion": "expected-dispersion-effect-v1",
+          "claimScope": "recommendation_estimate",
+          "evidenceStatus": "available",
+          "concentrationReduction": 0.513699,
+          "nonHotspotInclusionLift": 0.333333,
+          "preferenceChange": 0,
+          "extraTravelDistanceKm": 0.183404,
+          "extraTravelTimeMinutes": 2.333334,
+          "localImpactLift": 0.321061
+        }
+      },
+      "dataSources": [
+        {
+          "sourceRef": "kto-datalab-tourism-concentration-forecast",
+          "sourceName": "한국관광공사",
+          "dataset": "관광지 집중률 방문자 추이 예측 정보",
+          "sourceUrl": "https://www.data.go.kr/data/15128555/openapi.do",
+          "referencePeriod": "2026-08-26~2026-08-26",
+          "importedAt": "2026-08-26T11:43:56.548Z",
+          "mode": "live"
+        }
+      ],
+      "warnings": [
+        "이동 거리와 시간은 실제 길찾기가 아닌 직선거리·보행속도 기반 추정치입니다."
+      ]
+    },
+    {
+      "scenarioId": "returning-local",
+      "label": "재방문 / 로컬 여행",
+      "runs": 2,
+      "deterministic": true,
+      "determinismStatus": "pass",
+      "dataMode": "live",
+      "evidenceStatus": "partial",
+      "totalCandidates": 43,
+      "candidatesWithConcentration": 10,
+      "candidateCoverageRatio": 0.2326,
+      "baselineSelectedCount": 3,
+      "baselineSelectedWithConcentration": 0,
+      "baselineCoverageRatio": 0,
+      "michiSelectedCount": 3,
+      "michiSelectedWithConcentration": 0,
+      "michiCoverageRatio": 0,
+      "baselineStops": [
+        {
+          "placeName": "朝鮮火炉焼き(조선화로구이)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "ハハ&キム・ジョングクの401精肉食堂(하하&김종국의 401정육식당)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "TEISTY BURGER(테이스티버거)",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "michiStops": [
+        {
+          "placeName": "朝鮮火炉焼き(조선화로구이)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "ハハ&キム・ジョングクの401精肉食堂(하하&김종국의 401정육식당)",
+          "concentrationLevel": "unavailable"
+        },
+        {
+          "placeName": "TEISTY BURGER(테이스티버거)",
+          "concentrationLevel": "unavailable"
+        }
+      ],
+      "delta": {
+        "averagePreferenceScore": 0,
+        "tourismConcentrationScore": null,
+        "nonHotspotInclusionRate": null,
+        "averageTravelDistanceKm": 0,
+        "averageTravelTimeMinutes": 0,
+        "localImpactScore": null
+      },
+      "expectedEffect": {
+        "algorithmVersion": "expected-dispersion-effect-v1",
+        "claimScope": "recommendation_estimate",
+        "evidenceStatus": "partial",
+        "concentrationReduction": null,
+        "nonHotspotInclusionLift": null,
+        "preferenceChange": 0,
+        "extraTravelDistanceKm": 0,
+        "extraTravelTimeMinutes": 0,
+        "localImpactLift": null
+      },
+      "evidenceControlledBenchmark": {
+        "algorithmVersion": "evidence-controlled-benchmark-v1",
+        "status": "unavailable",
+        "candidatePool": {
+          "totalCandidates": 43,
+          "candidatesWithConcentration": 10,
+          "excludedMissingConcentration": 33,
+          "excludedBelowPreferenceThreshold": 10,
+          "eligibleCandidates": 0,
+          "requestedSelectionCount": 3,
+          "evaluatedSelectionCount": 0
+        },
+        "baseline": {
+          "algorithmVersion": "baseline-preference-popularity-distance-time-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "tourismConcentrationScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "nonHotspotInclusionRate": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelDistanceKm": {
+              "value": null,
+              "unit": "km",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelTimeMinutes": {
+              "value": null,
+              "unit": "minutes",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "localImpactScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            }
+          },
+          "route": {
+            "stops": []
+          }
+        },
+        "michi": {
+          "algorithmVersion": "michi-tourism-dispersion-v1",
+          "metrics": {
+            "averagePreferenceScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "tourismConcentrationScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "nonHotspotInclusionRate": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelDistanceKm": {
+              "value": null,
+              "unit": "km",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "averageTravelTimeMinutes": {
+              "value": null,
+              "unit": "minutes",
+              "status": "unavailable",
+              "sampleSize": 0
+            },
+            "localImpactScore": {
+              "value": null,
+              "unit": "ratio",
+              "status": "unavailable",
+              "sampleSize": 0
+            }
+          },
+          "route": {
+            "stops": []
+          }
+        },
+        "delta": {
+          "averagePreferenceScore": null,
+          "tourismConcentrationScore": null,
+          "nonHotspotInclusionRate": null,
+          "averageTravelDistanceKm": null,
+          "averageTravelTimeMinutes": null,
+          "localImpactScore": null
+        },
+        "expectedEffect": {
+          "algorithmVersion": "expected-dispersion-effect-v1",
+          "claimScope": "recommendation_estimate",
+          "evidenceStatus": "unavailable",
+          "concentrationReduction": null,
+          "nonHotspotInclusionLift": null,
+          "preferenceChange": null,
+          "extraTravelDistanceKm": null,
+          "extraTravelTimeMinutes": null,
+          "localImpactLift": null
+        }
+      },
+      "dataSources": [
+        {
+          "sourceRef": "kto-datalab-tourism-concentration-forecast",
+          "sourceName": "한국관광공사",
+          "dataset": "관광지 집중률 방문자 추이 예측 정보",
+          "sourceUrl": "https://www.data.go.kr/data/15128555/openapi.do",
+          "referencePeriod": "2026-08-26~2026-08-26",
+          "importedAt": "2026-08-26T11:43:56.548Z",
+          "mode": "live"
+        }
+      ],
+      "warnings": [
+        "관광 집중도와 취향 기준을 모두 충족한 후보가 없어 근거 통제 비교를 수행하지 못했습니다.",
+        "이동 거리와 시간은 실제 길찾기가 아닌 직선거리·보행속도 기반 추정치입니다."
+      ]
+    }
+  ],
+  "warnings": []
+}
