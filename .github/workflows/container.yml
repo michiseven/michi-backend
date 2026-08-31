@@ -40,3 +40,24 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=michi-backend
+          cache-to: type=gha,mode=max,scope=michi-backend
+  deploy:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      INFRA_DEPLOY_TOKEN: ${{ secrets.INFRA_DEPLOY_TOKEN }}
+    steps:
+      - name: Request backend deployment
+        run: |
+          if [ -z "$INFRA_DEPLOY_TOKEN" ]; then
+            echo "INFRA_DEPLOY_TOKEN is not configured; skipping automatic deployment."
+            exit 0
+          fi
+          curl --fail-with-body --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $INFRA_DEPLOY_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --url https://api.github.com/repos/michiseven/michi-infra/dispatches \
+            --data "{\"event_type\":\"deploy-service\",\"client_payload\":{\"service\":\"backend\",\"image_tag\":\"sha-${GITHUB_SHA::7}\"}}"
