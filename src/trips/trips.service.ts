@@ -241,6 +241,9 @@ export class TripsService {
   @LogEvent({
     name: 'tripGenerated',
     description: '서울 여행 일정 생성 요청 처리',
+    apiMethod: 'POST',
+    apiPath: '/trips/generate',
+    apiDescription: '여행 일정 생성',
     includeResult: false,
     includeDuration: true,
     includeArgs: false,
@@ -1133,6 +1136,9 @@ export class TripsService {
   @LogEvent({
     name: 'tripModified',
     description: '여행 경유지 삭제/순서변경/재계산 수정',
+    apiMethod: 'PATCH',
+    apiPath: '/trips/{id}/stops',
+    apiDescription: '여행 경유지 수정',
     includeResult: false,
     includeDuration: true,
     includeArgs: false,

@@ -102,6 +102,9 @@ export class UsersService {
   @LogEvent({
     name: 'userRegistered',
     description: '신규 사용자 회원가입',
+    apiMethod: 'POST',
+    apiPath: '/auth/register',
+    apiDescription: '회원가입',
     includeResult: false,
     includeArgs: false,
     fields: [{ name: 'locale', description: '선택한 서비스 언어', type: 'string' }],
@@ -138,6 +141,9 @@ export class UsersService {
   @LogEvent({
     name: 'userLoggedIn',
     description: '사용자 계정 로그인',
+    apiMethod: 'POST',
+    apiPath: '/auth/login',
+    apiDescription: '로그인',
     includeResult: false,
     includeArgs: false,
     fields: [],
@@ -283,6 +289,9 @@ export class UsersService {
   @LogEvent({
     name: 'userSavedTrip',
     description: '사용자 여행 일정 보관함 저장',
+    apiMethod: 'POST',
+    apiPath: '/users/me/saved-trips',
+    apiDescription: '여행 일정 저장',
     includeResult: false,
     includeArgs: false,
     fields: [

@@ -177,6 +177,9 @@ export class ChatService implements OnModuleInit {
   @LogEvent({
     name: 'chatMessageProcessed',
     description: 'LangGraph 대화 상태형 워크플로 실행',
+    apiMethod: 'POST',
+    apiPath: '/chat/threads/{threadId}/messages',
+    apiDescription: '대화 메시지 전송',
     includeResult: false,
     includeDuration: true,
     includeArgs: false,
@@ -277,6 +280,9 @@ export class ChatService implements OnModuleInit {
   @LogEvent({
     name: 'chatResumeExecuted',
     description: 'Human-in-the-loop 변경 승인/재개 실행',
+    apiMethod: 'POST',
+    apiPath: '/chat/threads/{threadId}/resume',
+    apiDescription: '대화 수정 재개',
     includeResult: false,
     includeDuration: true,
     includeArgs: false,
