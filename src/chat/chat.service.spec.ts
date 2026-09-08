@@ -158,6 +158,39 @@ describe('ChatService', () => {
     expect(res.responseMessage).toContain('이상의집');
   });
 
+  it('preserves distinct profile airports through the chat request into trip generation', async () => {
+    const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
+
+    await service.sendMessage(
+      threadId,
+      {
+        message: '성수에서 카페와 저녁 식사 일정 만들어줘',
+        locale: 'ko',
+        profile: {
+          arrivalDate: '2026-09-10',
+          arrivalTime: '14:30',
+          departureDate: '2026-09-12',
+          departureTime: '11:00',
+          arrivalAirport: 'ICN_T1',
+          departureAirport: 'GMP_DOM',
+          partySize: 3,
+          hasLuggage: true,
+        },
+      },
+      { threadSecret },
+    );
+
+    const tripsServiceMock = mockTripsService as { generate: jest.Mock };
+    expect(tripsServiceMock.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        arrivalAirport: 'ICN_T1',
+        departureAirport: 'GMP_DOM',
+        partySize: 3,
+        hasLuggage: true,
+      }),
+    );
+  });
+
   it('retrieves thread state snapshot after execution with ownership check', async () => {
     const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
     await service.sendMessage(
@@ -202,5 +235,43 @@ describe('ChatService', () => {
 
     const checkpoint = await service.getThreadState(threadId, { threadSecret });
     expect(JSON.stringify(checkpoint)).not.toContain('generated-edit-token-123');
+  });
+
+  it('keeps an example request separate from a prior trip and ignored form profile', async () => {
+    const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
+    await service.sendMessage(
+      threadId,
+      { message: '성수동 카페 일정 짜줘', locale: 'ko' },
+      { threadSecret },
+    );
+    const tripsServiceMock = mockTripsService as { generate: jest.Mock };
+    tripsServiceMock.generate.mockClear();
+
+    await service.sendMessage(
+      threadId,
+      {
+        message: '경복궁과 서촌 반나절 코스 짜줘',
+        locale: 'ko',
+        startFreshTrip: true,
+        profilePolicy: 'ignore',
+        profile: {
+          arrivalDate: '2026-09-20',
+          arrivalTime: '08:00',
+          departureDate: '2026-09-22',
+          departureTime: '22:00',
+          hotel: { name: '이전 일정 호텔' },
+        },
+      },
+      { threadSecret },
+    );
+
+    expect(tripsServiceMock.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '경복궁과 서촌 반나절 코스 짜줘',
+        startDate: undefined,
+        endDate: undefined,
+        hotel: undefined,
+      }),
+    );
   });
 });

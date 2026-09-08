@@ -58,7 +58,8 @@ export class TripsController {
   getStopAlternatives(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Param('stopId', new ParseUUIDPipe()) stopId: string,
+    @Headers('x-edit-token') editToken?: string,
   ): Promise<StopAlternativesResponse> {
-    return this.trips.getStopAlternatives(id, stopId);
+    return this.trips.getStopAlternatives(id, stopId, editToken);
   }
 }

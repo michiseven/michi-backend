@@ -288,6 +288,11 @@ describe('TripsService atomic stop editing', () => {
                 startTime: '13:30',
                 endTime: '21:00',
                 dailyBudgetKrw: 80_000,
+                startAnchor: {
+                  name: '인천국제공항 제1여객터미널',
+                  targetTime: '13:30',
+                  role: 'start',
+                },
                 interests: ['cafe'],
                 preferences: [],
                 avoid: [],
@@ -299,6 +304,11 @@ describe('TripsService atomic stop editing', () => {
                 startTime: '10:30',
                 endTime: '21:00',
                 dailyBudgetKrw: 80_000,
+                endAnchor: {
+                  name: '김포국제공항 국제선',
+                  targetTime: '21:00',
+                  role: 'destination',
+                },
                 interests: ['shopping'],
                 preferences: [],
                 avoid: [],
@@ -311,18 +321,33 @@ describe('TripsService atomic stop editing', () => {
       } as unknown as PreferencesService,
       { generate: jest.fn().mockReturnValue(['카페']) },
       {
-        normalize: jest.fn().mockImplementation((p: { name: string; sourcePlaceId: string }) => ({
-          source: 'naver',
-          sourcePlaceId: p.sourcePlaceId,
-          name: p.name,
-          category: 'cafe',
-          address: '서울시',
-          roadAddress: null,
-          location: { type: 'Point', coordinates: [127.0, 37.5] },
-          district: '용산구',
-          rawCategory: null,
-          rawPayload: {},
-        })),
+        normalize: jest
+          .fn()
+          .mockImplementation(
+            (p: {
+              provider: string;
+              name: string;
+              sourcePlaceId: string;
+              category: string | null;
+              address: string | null;
+              roadAddress: string | null;
+              latitude: number;
+              longitude: number;
+              rawCategory: string | null;
+              rawPayload: Record<string, unknown>;
+            }) => ({
+              source: p.provider,
+              sourcePlaceId: p.sourcePlaceId,
+              name: p.name,
+              category: p.category,
+              address: p.address,
+              roadAddress: p.roadAddress,
+              location: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+              district: '용산구',
+              rawCategory: p.rawCategory,
+              rawPayload: p.rawPayload,
+            }),
+          ),
       },
       { searchKtoCandidates: jest.fn().mockResolvedValue([]) } as never,
       {
@@ -346,6 +371,18 @@ describe('TripsService atomic stop editing', () => {
         mode: 'mock',
         search: jest.fn().mockResolvedValue({
           places: [
+            {
+              provider: 'naver',
+              sourcePlaceId: 'airport-result',
+              name: '인천국제공항 제1여객터미널',
+              category: 'airport',
+              address: '인천광역시 중구',
+              roadAddress: '인천광역시 중구 공항로 271',
+              latitude: 37.4485,
+              longitude: 126.4505,
+              rawCategory: '공항',
+              rawPayload: {},
+            },
             {
               provider: 'naver',
               sourcePlaceId: '1',
@@ -433,6 +470,8 @@ describe('TripsService atomic stop editing', () => {
       text: '8월 29일부터 30일까지 한남이랑 성수 갈래',
       startArea: '한남',
       locale: 'ko',
+      arrivalAirport: 'ICN_T1',
+      departureAirport: 'GMP_INTL',
     });
 
     expect(response).toBeDefined();
@@ -440,6 +479,10 @@ describe('TripsService atomic stop editing', () => {
     expect(response.providerModes).toBeDefined();
     expect(saveStops).toHaveBeenCalled();
     expect(persistedStops.map((stop) => stop.placeId)).toEqual(['place-1', 'place-2']);
+    expect(persistedStops.every((stop) => stop.stopType !== 'airport')).toBe(true);
+    expect(persistedStops).not.toContainEqual(
+      expect.objectContaining({ placeId: 'place-airport-result' }),
+    );
     expect(new Set(persistedStops.map((stop) => stop.placeId)).size).toBe(persistedStops.length);
     expect(saveScores).toHaveBeenCalledTimes(1);
     expect(findOneTrip).toHaveBeenCalled();
@@ -1064,13 +1107,10 @@ describe('TripsService atomic stop editing', () => {
       ),
     ).rejects.toThrow('You do not have permission to modify this trip.');
 
-    // 3. Public get response does NOT leak editToken in trip DTO
-    const publicResponse = await service.get('trip-protected');
-    expect((publicResponse.trip as unknown as { editToken?: string }).editToken).toBeUndefined();
-    expect(publicResponse.trip.isEditable).toBe(false);
-    expect(publicResponse.editToken).toBeUndefined();
+    // 3. A UUID is not a read grant. Missing token must not disclose the trip.
+    await expect(service.get('trip-protected')).rejects.toThrow('permission to read this trip');
 
-    // 4. Authorized get response sets isEditable=true but does NOT leak raw token in trip DTO
+    // 4. Authorized response sets isEditable=true but does NOT leak raw token in trip DTO
     const authedResponse = await service.get('trip-protected', 'secret-token-123');
     expect((authedResponse.trip as unknown as { editToken?: string }).editToken).toBeUndefined();
     expect(authedResponse.trip.isEditable).toBe(true);
@@ -1143,9 +1183,8 @@ describe('TripsService atomic stop editing', () => {
       new DeterministicItineraryExplanationProvider(),
     );
 
-    // 1. Get response sets isEditable=false
-    const getRes = await service.get('trip-legacy-91');
-    expect(getRes.trip.isEditable).toBe(false);
+    // 1. Legacy records have no read capability and cannot be exposed publicly.
+    await expect(service.get('trip-legacy-91')).rejects.toThrow('permission to read this trip');
 
     // 2. patchStops rejects with 403 Forbidden even if no token is passed
     await expect(

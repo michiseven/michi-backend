@@ -257,4 +257,32 @@ describe('PlaceDeduplicator', () => {
     expect(result1.removedCount).toBe(1);
     expect(result1.places.map((p) => p.id)).toEqual(['kto-1', 'naver-other']);
   });
+
+  it('keeps a local venue category when it conflicts with a matching KTO content category', () => {
+    const kto = makePlace({
+      id: 'kto-joseon-hwaro',
+      source: 'kto-tour-jpn',
+      sourcePlaceId: 'kto-joseon-hwaro',
+      name: '조선화로구이',
+      category: 'shopping',
+      rawCategory: 'kto:82:A04',
+    });
+    const kakao = makePlace({
+      id: 'kakao-joseon-hwaro',
+      source: 'kakao-local',
+      sourcePlaceId: 'kakao-joseon-hwaro',
+      name: '조선화로구이',
+      category: 'restaurant',
+      rawCategory: '음식점 > 한식 > 육류,고기요리',
+      location: { type: 'Point', coordinates: [127.04371, 37.54671] },
+    });
+
+    const result = deduplicator.deduplicate([kto, kakao]);
+
+    expect(result.places).toHaveLength(1);
+    expect(result.places[0]).toMatchObject({
+      id: 'kakao-joseon-hwaro',
+      category: 'restaurant',
+    });
+  });
 });

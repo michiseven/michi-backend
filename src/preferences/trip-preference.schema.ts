@@ -84,7 +84,14 @@ export const TRIP_PREFERENCE_JSON_SCHEMA = {
       maxItems: 10,
       items: {
         type: 'string',
-        enum: ['crowd_avoidance', 'must_visit', 'short_transit', 'interest', 'budget'],
+        enum: [
+          'crowd_avoidance',
+          'must_visit',
+          'short_transit',
+          'interest',
+          'budget',
+          'luggage_storage',
+        ],
       },
     },
     rainFallbackPolicy: {

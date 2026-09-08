@@ -117,6 +117,15 @@ function sourcePriority(place: Place): number {
   return 3;
 }
 
+function categoryConflict(left: Place, right: Place): boolean {
+  return Boolean(left.category && right.category && left.category !== right.category);
+}
+
+function localVenueCategoryPriority(place: Place): number {
+  const isLocal = place.source === 'kakao-local' || place.source === 'naver-local';
+  return isLocal && place.category !== null ? 0 : 1;
+}
+
 @Injectable()
 export class PlaceDeduplicator {
   deduplicate(input: Place[]): DeduplicatedPlaces {
@@ -140,6 +149,28 @@ export class PlaceDeduplicator {
       for (const existing of places) {
         const match = evaluateDuplicateMatch(existing, candidate);
         if (match) {
+          // Keep KTO for equal classifications (it carries Japanese tourism
+          // metadata), but retain a local provider's concrete venue category
+          // when the two provider records conflict. This prevents a restaurant
+          // from being shown with a shopping role after deduplication.
+          if (
+            categoryConflict(existing, candidate) &&
+            localVenueCategoryPriority(candidate) < localVenueCategoryPriority(existing)
+          ) {
+            const existingIndex = places.indexOf(existing);
+            places[existingIndex] = candidate;
+            matches.push({
+              keptPlaceId: candidate.id,
+              keptPlaceName: candidate.name,
+              droppedPlaceId: existing.id,
+              droppedPlaceName: existing.name,
+              reason: match.reason,
+              distanceMeters: match.distanceMeters,
+            });
+            reasonCounts[match.reason] += 1;
+            matched = true;
+            break;
+          }
           matched = true;
           matches.push({
             keptPlaceId: existing.id,

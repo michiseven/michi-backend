@@ -8,6 +8,7 @@ const UserPrioritySchema = z.enum([
   'short_transit',
   'interest',
   'budget',
+  'luggage_storage',
 ]);
 
 const AnchorPlaceOutputSchema = z.object({

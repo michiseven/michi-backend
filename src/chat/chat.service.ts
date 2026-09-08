@@ -32,7 +32,16 @@ function formTripContext(profile: SendMessageDto['profile']): {
   arrivalTime?: string;
   departureDate?: string;
   departureTime?: string;
+  arrivalAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
+  departureAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
   hotel?: string;
+  partySize?: number;
+  budget?: number;
+  budgetScope?: 'total' | 'per_person';
+  companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+  pace?: 'relaxed' | 'standard' | 'packed';
+  safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
+  hasLuggage?: boolean;
 } | null {
   if (!profile) return null;
 
@@ -57,7 +66,19 @@ function formTripContext(profile: SendMessageDto['profile']): {
     arrivalTime,
     departureDate,
     departureTime,
+    arrivalAirport: profile.arrivalAirport,
+    departureAirport: profile.departureAirport,
     hotel: profile.hotel?.name?.slice(0, 120),
+    partySize:
+      Number.isInteger(profile.partySize) && profile.partySize! >= 1 && profile.partySize! <= 50
+        ? profile.partySize
+        : undefined,
+    budget: typeof profile.budget === 'number' && profile.budget >= 0 ? profile.budget : undefined,
+    budgetScope: profile.budgetScope,
+    companions: profile.companions,
+    pace: profile.pace,
+    safetyConstraints: profile.safetyConstraints,
+    hasLuggage: profile.hasLuggage === true,
   };
 }
 
@@ -66,6 +87,8 @@ export class ChatService implements OnModuleInit {
   private readonly logger = new Logger(ChatService.name);
   private checkpointer!: BaseCheckpointSaver;
   private graph!: ReturnType<typeof createChatGraph>;
+  /** In-process cancellation applies to the active API run only; it is not persisted. */
+  private readonly activeRuns = new Map<string, AbortController>();
 
   constructor(
     private readonly config: ConfigService,
@@ -240,13 +263,18 @@ export class ChatService implements OnModuleInit {
     const input = {
       messages: [new HumanMessage(dto.message)],
       locale,
-      currentTripId: dto.currentTripId || thread.tripId || null,
+      // Example starts are an explicit state boundary: a previous trip must not
+      // influence intent classification or the next generated itinerary.
+      currentTripId: dto.startFreshTrip ? null : dto.currentTripId || thread.tripId || null,
+      relaxations: dto.relaxations ?? [],
       // 아래 값은 한 번의 사용자 턴에만 유효하다. 이전 checkpoint 값을 명시적으로
       // 비우지 않으면 validate_input이 과거 응답을 현재 응답으로 오인한다.
       intent: null,
       modification: null,
       createTripInput: null,
-      formTripContext: formTripContext(dto.profile),
+      // A visible form can contain a previous plan. Only apply it when this
+      // request declares that it belongs to the new plan (legacy stays apply).
+      formTripContext: formTripContext(dto.profilePolicy === 'ignore' ? null : dto.profile),
       verifiedPlaceFacts: null,
       alternatives: [],
       pendingAction: null,
@@ -258,7 +286,31 @@ export class ChatService implements OnModuleInit {
       errorCode: null,
     };
 
-    const resultState = (await this.graph.invoke(input, config)) as unknown as ChatState;
+    const abortController = new AbortController();
+    this.activeRuns.set(threadId, abortController);
+
+    let resultState: ChatState;
+    try {
+      resultState = await this.invokeUntilCancelled(input, config, abortController.signal);
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        return {
+          threadId,
+          threadSecret: thread.threadSecret,
+          status: 'failed',
+          responseMessage:
+            locale === 'ko'
+              ? '일정 생성을 취소했어요. 조건을 고쳐서 다시 보낼 수 있어요.'
+              : '旅程作成をキャンセルしました。条件を修正してもう一度送れます。',
+          errorCode: 'CHAT_RUN_CANCELLED',
+        };
+      }
+      throw error;
+    } finally {
+      if (this.activeRuns.get(threadId) === abortController) {
+        this.activeRuns.delete(threadId);
+      }
+    }
 
     let issuedEditToken: string | undefined;
     if (resultState.intent === 'create_trip' && resultState.resultTripId) {
@@ -275,6 +327,38 @@ export class ChatService implements OnModuleInit {
     }
 
     return this.mapStateToResponse(threadId, resultState, thread.threadSecret, issuedEditToken);
+  }
+
+  async cancelRun(
+    threadId: string,
+    caller?: { userId?: string | null; threadSecret?: string | null },
+  ): Promise<ChatResponseDto> {
+    const thread = await this.validateThreadAccess(threadId, caller ?? {});
+    const activeRun = this.activeRuns.get(threadId);
+    if (activeRun && !activeRun.signal.aborted) {
+      activeRun.abort();
+      return {
+        threadId,
+        threadSecret: thread.threadSecret,
+        status: 'failed',
+        responseMessage:
+          thread.locale === 'ko'
+            ? '일정 생성을 취소했어요. 조건을 고쳐서 다시 보낼 수 있어요.'
+            : '旅程作成をキャンセルしました。条件を修正してもう一度送れます。',
+        errorCode: 'CHAT_RUN_CANCELLED',
+      };
+    }
+
+    return {
+      threadId,
+      threadSecret: thread.threadSecret,
+      status: 'completed',
+      responseMessage:
+        thread.locale === 'ko'
+          ? '취소할 생성 작업이 없어요.'
+          : 'キャンセルできる作成処理はありません。',
+      errorCode: null,
+    };
   }
 
   @LogEvent({
@@ -380,5 +464,22 @@ export class ChatService implements OnModuleInit {
       resultTrip: state.resultTrip,
       errorCode: state.errorCode,
     };
+  }
+
+  private async invokeUntilCancelled(
+    input: object,
+    config: object,
+    signal: AbortSignal,
+  ): Promise<ChatState> {
+    const graphRun = this.graph.invoke(input, config) as Promise<ChatState>;
+    // LangGraph/Provider calls that already started may not support AbortSignal.
+    // Consume a late rejection so a cancelled HTTP run never becomes unhandled.
+    void graphRun.catch((error: unknown) => this.logger.debug('Cancelled chat run settled', error));
+    const cancelled = new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('CHAT_RUN_CANCELLED')), {
+        once: true,
+      });
+    });
+    return Promise.race([graphRun, cancelled]);
   }
 }

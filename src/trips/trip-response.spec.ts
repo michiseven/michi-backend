@@ -7,6 +7,10 @@ import type {
 } from '../database/entities';
 import { toTripDto } from './trip-response';
 
+function dtoAirportRoles(dto: ReturnType<typeof toTripDto>): string[] {
+  return (dto.airportTransfers ?? []).map((transfer) => transfer.role);
+}
+
 describe('trip API response', () => {
   it('returns map-safe coordinates, HH:mm values, crowd level, and applied weights', () => {
     const place = {
@@ -77,6 +81,114 @@ describe('trip API response', () => {
         },
       ],
     });
+  });
+
+  it('represents explicit arrival and departure airports once as boundaries, never visit stops', () => {
+    const airport = {
+      id: 'airport-id',
+      source: 'official_airport',
+      sourcePlaceId: 'ICN_T1',
+      name: '인천국제공항 제1여객터미널',
+      category: 'airport',
+      location: { type: 'Point', coordinates: [126.4505, 37.4485] },
+    } as unknown as Place;
+    const cafe = {
+      id: 'cafe-id',
+      source: 'mock',
+      name: '홍대 카페',
+      category: 'cafe',
+      location: { type: 'Point', coordinates: [126.923, 37.556] },
+    } as unknown as Place;
+    const makeStop = (place: Place, order: number, stopType: 'airport' | 'general'): TripStop =>
+      ({
+        id: `${place.id}-stop`,
+        order,
+        stopType,
+        placeId: place.id,
+        place,
+        arrivalAt: new Date('2026-09-05T00:00:00.000Z'),
+        leaveAt: new Date('2026-09-05T01:00:00.000Z'),
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: 'fixture',
+        scoreBreakdown: { total: 0.8 },
+      }) as TripStop;
+    const trip = {
+      id: 'airport-boundary-trip',
+      status: 'ready',
+      travelDate: '2026-09-05',
+      startTime: '08:20:00',
+      endTime: '19:00:00',
+      budgetKrw: null,
+      totalEstimatedCost: null,
+      preference: {
+        validatedJson: {
+          locale: 'ko',
+          arrivalAirport: 'ICN_T1',
+          departureAirport: 'GMP_INTL',
+          totalDays: 2,
+          days: [
+            { dayNumber: 1, date: '2026-09-05', startTime: '08:20', endTime: '19:00' },
+            { dayNumber: 2, date: '2026-09-06', startTime: '10:00', endTime: '18:30' },
+          ],
+        },
+      },
+      recommendationResult: { finalWeights: {} },
+      stops: [makeStop(airport, 1, 'airport'), makeStop(cafe, 2, 'general')],
+    } as unknown as Trip;
+
+    const dto = toTripDto(trip);
+
+    expect(dto.stops).toHaveLength(1);
+    expect(dto.stops[0]?.placeName).toBe('홍대 카페');
+    expect(dto.airportTransfers?.[0]).toMatchObject({
+      role: 'arrival',
+      appliesOn: 'first_day',
+      dayNumber: 1,
+      date: '2026-09-05',
+      at: '08:20',
+      airport: { code: 'ICN_T1' },
+      transfer: { status: 'unavailable', durationMinutes: null },
+    });
+    expect(dto.airportTransfers?.[1]).toMatchObject({
+      role: 'departure',
+      appliesOn: 'last_day',
+      dayNumber: 2,
+      date: '2026-09-06',
+      at: '18:30',
+      airport: { code: 'GMP_INTL' },
+      bufferMinutes: null,
+    });
+  });
+
+  it.each([
+    ['arrival only', { arrivalAirport: 'ICN_T2' }, ['arrival']],
+    ['departure only', { departureAirport: 'GMP_DOM' }, ['departure']],
+    ['ambiguous legacy airport', { airport: 'ICN_T1' }, []],
+  ])('does not duplicate airport boundaries for %s', (_scenario, airportInput, roles) => {
+    const trip = {
+      id: 'airport-role-trip',
+      status: 'ready',
+      travelDate: '2026-09-05',
+      startTime: '08:20:00',
+      endTime: '19:00:00',
+      budgetKrw: null,
+      totalEstimatedCost: null,
+      preference: {
+        validatedJson: {
+          ...airportInput,
+          totalDays: 2,
+          days: [
+            { dayNumber: 1, date: '2026-09-05', startTime: '08:20', endTime: '19:00' },
+            { dayNumber: 2, date: '2026-09-06', startTime: '10:00', endTime: '18:30' },
+          ],
+        },
+      },
+      recommendationResult: { finalWeights: {} },
+      stops: [],
+    } as unknown as Trip;
+
+    expect(dtoAirportRoles(toTripDto(trip))).toEqual(roles);
   });
 
   it('fails fast if persisted stop coordinates violate the wire contract', () => {
@@ -280,5 +392,86 @@ describe('trip API response', () => {
 
     expect(toTripDto(trip).stops[0]).not.toHaveProperty('estimatedCost');
     expect(toTripDto(trip).stops[0]).not.toHaveProperty('priceEvidence');
+  });
+
+  it('keeps safety requests unverified without place-level provider evidence', () => {
+    const place = {
+      id: 'place-id',
+      name: '검증 없는 장소',
+      category: 'restaurant',
+      location: { type: 'Point', coordinates: [127.0436, 37.5467] },
+    } as unknown as Place;
+    const trip = {
+      id: 'trip-id',
+      status: 'ready',
+      travelDate: '2026-09-05',
+      startTime: '13:00:00',
+      endTime: '18:00:00',
+      preference: {
+        validatedJson: {
+          safetyConstraints: [
+            { id: 'safety-food_allergy', kind: 'food_allergy', scope: 'place' },
+            { id: 'safety-wheelchair', kind: 'wheelchair', scope: 'route' },
+            { id: 'safety-stairs_avoidance', kind: 'stairs_avoidance', scope: 'route' },
+          ],
+        },
+      },
+      recommendationResult: { finalWeights: {} },
+      stops: [
+        {
+          id: 'stop-id',
+          order: 1,
+          placeId: place.id,
+          place,
+          arrivalAt: new Date('2026-09-05T04:00:00.000Z'),
+          leaveAt: new Date('2026-09-05T05:00:00.000Z'),
+          estimatedStayMinutes: 60,
+          estimatedCost: null,
+          reason: '추천 이유',
+          scoreBreakdown: { total: 0.8 },
+          accessibilityContext: {
+            status: 'checked',
+            method: 'seoul-gis-straight-corridor-v1',
+            risk: 'none-detected',
+            derivedGradePercent: null,
+            explicitMaxSlopePercent: null,
+            stairFeatureCount: 0,
+            steepFeatureCount: 0,
+            sourceRefs: ['https://data.seoul.go.kr/accessibility'],
+            disclaimer: '직선 회랑 검사',
+          },
+        },
+      ],
+    } as unknown as Trip;
+
+    const dto = toTripDto(trip);
+    expect(dto.safetyConstraints?.requested).toEqual([
+      { id: 'safety-food_allergy', kind: 'food_allergy', scope: 'place' },
+      { id: 'safety-wheelchair', kind: 'wheelchair', scope: 'route' },
+      { id: 'safety-stairs_avoidance', kind: 'stairs_avoidance', scope: 'route' },
+    ]);
+    expect(dto.safetyConstraints?.assessments[0]).toMatchObject({
+      kind: 'food_allergy',
+      status: 'unverified',
+      result: 'unknown',
+    });
+    expect(dto.safetyConstraints?.requiresUserConfirmation).toBe(true);
+    expect(dto.stops[0]?.accessibilitySafety).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'wheelchair',
+          scope: 'route',
+          status: 'unverified',
+          result: 'unknown',
+          sourceRefs: [
+            {
+              title: '서울시 공개 GIS 보행 위험 탐지 데이터',
+              url: 'https://data.seoul.go.kr/accessibility',
+              fetchedAt: null,
+            },
+          ],
+        }),
+      ]),
+    );
   });
 });

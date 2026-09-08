@@ -25,14 +25,17 @@ export class LogFriendsService
 
   onModuleInit(): void {
     const ingestUrl =
-      this.configService.get<string>('LOG_FRIENDS_INGEST_URL') || 'http://localhost:8080/ingest';
-    const workerId = this.configService.get<string>('LOG_FRIENDS_WORKER_ID') || 'michi-backend';
+      this.configService.get<string>('LOGFRIENDS_INGEST_URL') || 'http://localhost:8080/ingest';
+    const workerId = this.configService.get<string>('LOGFRIENDS_WORKER_ID') || 'michi-backend';
 
     this.client = createNodeClient({
       ingestUrl,
       workerId,
-      maxQueueSize: 500,
-      batchSize: 20,
+      maxQueueSize: this.configService.get<number>('LOGFRIENDS_QUEUE_CAPACITY') || 10_000,
+      maxQueueBytes:
+        this.configService.get<number>('LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES') || 33_554_432,
+      batchSize: this.configService.get<number>('LOGFRIENDS_BATCH_SIZE') || 100,
+      flushIntervalMs: this.configService.get<number>('LOGFRIENDS_BATCH_INTERVAL_MS') || 500,
     });
 
     setGlobalClient(this.client);
@@ -43,8 +46,8 @@ export class LogFriendsService
   async onApplicationBootstrap(): Promise<void> {
     if (this.client) {
       try {
-        const workerId = this.configService.get<string>('LOG_FRIENDS_WORKER_ID') || 'michi-backend';
-        const appName = this.configService.get<string>('LOG_FRIENDS_APP_NAME') || 'michi';
+        const workerId = this.configService.get<string>('LOGFRIENDS_WORKER_ID') || 'michi-backend';
+        const appName = this.configService.get<string>('LOGFRIENDS_APP_NAME') || 'michi';
         const registration = await registerAgent(this.client, {
           appName,
           sourceType: 'NODE',

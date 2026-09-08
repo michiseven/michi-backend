@@ -80,6 +80,17 @@ export class ChatController {
     });
   }
 
+  @Post('threads/:threadId/cancel')
+  async cancelRun(
+    @Param('threadId') threadId: string,
+    @Req() req: Request,
+  ): Promise<ChatResponseDto> {
+    return this.chatService.cancelRun(threadId, {
+      userId: this.extractUserId(req),
+      threadSecret: this.extractThreadSecret(req),
+    });
+  }
+
   @Get('threads/:threadId/state')
   async getThreadState(
     @Param('threadId') threadId: string,

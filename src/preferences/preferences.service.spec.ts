@@ -53,6 +53,26 @@ describe('PreferencesService', () => {
     expect(resultJa.preference.maxWalkMinutes).toBe(7);
   });
 
+  it('preserves an exact party size and normalizes a per-person budget for ranking', async () => {
+    const result = await service.parse({
+      text: '성수에서 친구들과 카페 갈래',
+      startArea: '성수',
+      partySize: 4,
+      companions: 'friends',
+      pace: 'standard',
+      budget: 30_000,
+      budgetScope: 'per_person',
+    });
+
+    expect(result.preference).toMatchObject({
+      partySize: 4,
+      companions: 'friends',
+      pace: 'balanced',
+      budget: 120_000,
+      totalBudgetKrw: 120_000,
+    });
+  });
+
   it('parses concert venue and sets anchorPlace and inferred area', async () => {
     const result = await service.parse({
       text: '18時にKSPO DOMEでコンサートがあるから、その前にカフェに行きたい。',
@@ -67,28 +87,33 @@ describe('PreferencesService', () => {
   });
 
   it('prioritizes explicit startDate and endDate and generates 3-day sequential dates', async () => {
-    const result = await service.parse({
-      text: '2박 3일 서울 여행 가고 싶어',
-      startDate: '2026-09-01',
-      endDate: '2026-09-03',
-      startTime: '13:00',
-      endTime: '20:30',
-      startArea: '공덕',
-      budget: 240000,
-    });
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-01T00:00:00+09:00'));
+    try {
+      const result = await service.parse({
+        text: '2박 3일 서울 여행 가고 싶어',
+        startDate: '2026-09-01',
+        endDate: '2026-09-03',
+        startTime: '13:00',
+        endTime: '20:30',
+        startArea: '공덕',
+        budget: 240000,
+      });
 
-    expect(result.preference.startDate).toBe('2026-09-01');
-    expect(result.preference.endDate).toBe('2026-09-03');
-    expect(result.preference.totalDays).toBe(3);
-    expect(result.preference.days).toHaveLength(3);
-    expect(result.preference.days![0]!.dayNumber).toBe(1);
-    expect(result.preference.days![0]!.date).toBe('2026-09-01');
-    expect(result.preference.days![0]!.startTime).toBe('13:00');
-    expect(result.preference.days![1]!.dayNumber).toBe(2);
-    expect(result.preference.days![1]!.date).toBe('2026-09-02');
-    expect(result.preference.days![2]!.dayNumber).toBe(3);
-    expect(result.preference.days![2]!.date).toBe('2026-09-03');
-    expect(result.preference.days![2]!.endTime).toBe('20:30');
+      expect(result.preference.startDate).toBe('2026-09-01');
+      expect(result.preference.endDate).toBe('2026-09-03');
+      expect(result.preference.totalDays).toBe(3);
+      expect(result.preference.days).toHaveLength(3);
+      expect(result.preference.days![0]!.dayNumber).toBe(1);
+      expect(result.preference.days![0]!.date).toBe('2026-09-01');
+      expect(result.preference.days![0]!.startTime).toBe('13:00');
+      expect(result.preference.days![1]!.dayNumber).toBe(2);
+      expect(result.preference.days![1]!.date).toBe('2026-09-02');
+      expect(result.preference.days![2]!.dayNumber).toBe(3);
+      expect(result.preference.days![2]!.date).toBe('2026-09-03');
+      expect(result.preference.days![2]!.endTime).toBe('20:30');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects invalid time window where startTime >= endTime', async () => {
@@ -99,6 +124,43 @@ describe('PreferencesService', () => {
         endTime: '13:00',
       }),
     ).rejects.toThrow();
+  });
+
+  it('accepts a multi-day trip whose final-day departure time is earlier than day-one arrival', async () => {
+    const result = await service.parse({
+      text: '2박 3일 서울 여행',
+      startDate: '2026-10-10',
+      endDate: '2026-10-12',
+      startTime: '13:00',
+      endTime: '10:00',
+    });
+
+    expect(result.preference).toMatchObject({
+      startDate: '2026-10-10',
+      endDate: '2026-10-12',
+      startTime: '13:00',
+      endTime: '10:00',
+    });
+  });
+
+  it('uses airport anchors only when the form supplies an explicit direction', async () => {
+    const directed = await service.parse({
+      text: '2일 서울 여행',
+      startDate: '2026-10-05',
+      endDate: '2026-10-06',
+      arrivalAirport: 'ICN_T1',
+      departureAirport: 'GMP_INTL',
+    });
+    expect(directed.preference.days?.[0]?.startAnchor?.name).toBe('인천국제공항 제1여객터미널');
+    expect(directed.preference.days?.[1]?.endAnchor?.name).toBe('김포국제공항 국제선');
+
+    const ambiguous = await service.parse({
+      text: '인천공항을 이용하는 2일 서울 여행',
+      startDate: '2026-10-05',
+      endDate: '2026-10-06',
+    });
+    expect(ambiguous.preference.days?.[0]?.startAnchor).toBeNull();
+    expect(ambiguous.preference.days?.[1]?.endAnchor).toBeNull();
   });
 
   it('deterministically preserves explicit transit, meal, area anchor, and appointment defaults omitted by the LLM', async () => {

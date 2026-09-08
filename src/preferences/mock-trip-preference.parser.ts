@@ -7,6 +7,7 @@ import type {
   PreferenceParseResult,
 } from './preference.types';
 import { TripPreferenceSchemaValidator } from './trip-preference-schema.validator';
+import { findVerifiedAirport } from '../common/constants/airports.registry';
 
 const SEOUL_DISTRICTS = [
   '강남구',
@@ -385,24 +386,22 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
     const endDate =
       input.endDate ?? (totalDays > 1 ? dateList[dateList.length - 1] : startDate) ?? startDate;
 
-    const partySize = includesAny(input.text, ['친구와 둘', '둘이', '2명', '2人', '二人', '두 명'])
-      ? 2
-      : 1;
+    const partySize =
+      input.partySize ??
+      (includesAny(input.text, ['친구와 둘', '둘이', '2명', '2人', '二人', '두 명']) ? 2 : 1);
     const totalBudget = input.budget ?? budgetFromText(input.text) ?? totalDays * 80_000;
 
     let baseCamp: ParsedTripPreference['baseCamp'] = null;
     let airport: string | null = null;
+    const resolvedArrivalAirport = input.arrivalAirport
+      ? (findVerifiedAirport(input.arrivalAirport)?.nameKo ?? input.arrivalAirport)
+      : null;
+    const resolvedDepartureAirport = input.departureAirport
+      ? (findVerifiedAirport(input.departureAirport)?.nameKo ?? input.departureAirport)
+      : null;
 
     if (input.airport) {
-      if (input.airport === 'ICN_T1' || input.airport.includes('제1')) {
-        airport = '인천국제공항 제1여객터미널';
-      } else if (input.airport === 'ICN_T2' || input.airport.includes('제2')) {
-        airport = '인천국제공항 제2여객터미널';
-      } else if (input.airport === 'GMP' || input.airport.includes('김포')) {
-        airport = '김포국제공항';
-      } else {
-        airport = input.airport;
-      }
+      airport = findVerifiedAirport(input.airport)?.nameKo ?? input.airport;
     } else if (/인천공항|인천국제공항|ICN|Incheon/i.test(input.text)) {
       if (/제2여객터미널|T2|2터미널/i.test(input.text)) {
         airport = '인천국제공항 제2여객터미널';
@@ -413,10 +412,13 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
       airport = '김포국제공항';
     }
 
+    airport = resolvedArrivalAirport ?? resolvedDepartureAirport ?? airport;
+
     const hotelMatch = input.text.match(
       /([가-힣A-Za-z0-9\s]+(?:호텔|숙소|게스트하우스|에어비앤비|Hotel))/,
     );
     const hotelName =
+      input.hotelSelection?.name?.trim() ||
       input.hotel?.trim() ||
       (hotelMatch
         ? hotelMatch[1]!.trim()
@@ -474,8 +476,23 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
       }
 
       // 일자별 시작/종료 시간
-      let dayStartTime = input.startTime ?? timeFromText(dayChunk, 'start') ?? '10:30';
-      let dayEndTime = input.endTime ?? timeFromText(dayChunk, 'end') ?? '21:00';
+      // 입력 폼의 시작 시각은 입국일(첫날), 종료 시각은 출국일(마지막 날)에만 적용한다.
+      // 다일 여행에 두 값을 모든 날에 복제하면 첫날 13:00~10:00 같은 잘못된 하루 창이 된다.
+      let dayStartTime =
+        (dayNum === 1 ? input.startTime : undefined) ?? timeFromText(dayChunk, 'start') ?? '10:30';
+      let dayEndTime =
+        (dayNum === totalDays ? input.endTime : undefined) ??
+        timeFromText(dayChunk, 'end') ??
+        '21:00';
+      if (dayNum === totalDays && input.endTime && dayStartTime >= dayEndTime) {
+        const [departureHour, departureMinute] = dayEndTime.split(':').map(Number);
+        const departureMinutes = departureHour! * 60 + departureMinute!;
+        // 출국일에는 출발 전 공항 이동만 남을 수 있다. 최소 2시간의 이동 창을 확보한다.
+        const finalDayStartMinutes = Math.max(0, departureMinutes - 120);
+        dayStartTime = `${String(Math.floor(finalDayStartMinutes / 60)).padStart(2, '0')}:${String(
+          finalDayStartMinutes % 60,
+        ).padStart(2, '0')}`;
+      }
       if (dayNum === 1) {
         if (includesAny(dayChunk, ['13시', '13:30', '오후 1시', '오후 1시 30분', '13:00'])) {
           dayStartTime = '13:00';
@@ -589,16 +606,24 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
         endTime: dayEndTime,
         dailyBudgetKrw: dailyBudget,
         startAnchor:
-          dayNum === 1 && airport
-            ? { name: airport, targetTime: dayStartTime, role: 'start' }
+          // A generic airport mention has no direction.  It must not silently become
+          // both a day-one origin and a final-day destination.
+          dayNum === 1 && resolvedArrivalAirport
+            ? {
+                name: resolvedArrivalAirport,
+                targetTime: dayStartTime,
+                role: 'start',
+              }
             : baseCamp
               ? { name: baseCamp.name, targetTime: dayStartTime, role: 'start' }
               : null,
         endAnchor:
-          dayNum === totalDays &&
-          airport &&
-          (totalDays > 1 || /출국|귀국|공항으로|공항\s*이동/i.test(input.text))
-            ? { name: airport, targetTime: dayEndTime, role: 'destination' }
+          dayNum === totalDays && resolvedDepartureAirport
+            ? {
+                name: resolvedDepartureAirport,
+                targetTime: dayEndTime,
+                role: 'destination',
+              }
             : baseCamp
               ? { name: baseCamp.name, targetTime: dayEndTime, role: 'destination' }
               : null,
@@ -633,7 +658,14 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
       baseCamp,
       airport,
       mobilityConstraint,
-      userPriorities: ['crowd_avoidance', 'must_visit', 'short_transit', 'interest', 'budget'],
+      userPriorities: [
+        'crowd_avoidance',
+        'must_visit',
+        'short_transit',
+        'interest',
+        'budget',
+        ...(input.hasLuggage ? ['luggage_storage' as const] : []),
+      ],
       rainFallbackPolicy: 'indoor_switch',
 
       // Single-day shortcut fields

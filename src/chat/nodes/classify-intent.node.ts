@@ -25,6 +25,8 @@ export function createClassifyIntentNode() {
         }
       : null;
 
+    // ChatService initializes this context on every request, so an ignored
+    // profile cannot leak from a LangGraph checkpoint into an example request.
     const createTripInput = classification.createTripInput
       ? {
           ...classification.createTripInput,
@@ -35,7 +37,16 @@ export function createClassifyIntentNode() {
           endDate: form?.departureDate,
           startTime: form?.arrivalTime ?? classification.createTripInput.startTime,
           endTime: form?.departureTime ?? classification.createTripInput.endTime,
+          arrivalAirport: form?.arrivalAirport,
+          departureAirport: form?.departureAirport,
           hotel: form?.hotel ?? classification.createTripInput.hotel,
+          partySize: form?.partySize ?? classification.createTripInput.partySize,
+          budget: form?.budget ?? classification.createTripInput.budget,
+          budgetScope: form?.budgetScope,
+          companions: form?.companions,
+          pace: form?.pace,
+          safetyConstraints: form?.safetyConstraints,
+          hasLuggage: form?.hasLuggage,
         }
       : null;
 

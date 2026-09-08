@@ -10,12 +10,15 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import type { TripPreferenceParser } from '../preferences/preference-parser';
 import type {
+  AnchorPlacePreference,
+  DayTripPreference,
   ParsedTripPreference,
   PreferenceParseInput,
   PreferenceParseResult,
 } from '../preferences/preference.types';
 import { TripPreferenceSchemaValidator } from '../preferences/trip-preference-schema.validator';
 import { TripPreferenceOutputSchema } from './trip-preference-output.schema';
+import { findVerifiedAirport } from '../common/constants/airports.registry';
 
 export const OPENAI_CLIENT = Symbol('OPENAI_CLIENT');
 
@@ -30,6 +33,7 @@ Rules:
   * Parse all days into the 'days' array with Day 1, Day 2, Day 3, etc.
   * Extract specific neighborhood targets for each day into day.area (e.g. Day 1 -> "한남", Day 2 -> "성수", Day 3 -> "서촌").
   * Calculate totalDays and distribute budget across days.
+  * An explicit arrival time applies only to Day 1. An explicit departure time applies only to the final day. Never copy an arrival-time start window onto the final day when it is later than that day's departure time.
 - Basecamp (Hotel):
   * If a basecamp/hotel is mentioned (e.g. 롯데시티호텔 마포, 명동 호텔), extract it into baseCamp with name and dailyReturnTime (e.g. 21:30). Set startAnchor and endAnchor for each day accordingly.
 - Airport (Incheon / Gimpo):
@@ -48,6 +52,92 @@ Rules:
   * If the user explicitly prefers subway, bus, walking, or taxi, always set mobilityConstraint.preferredTransit to subway, bus, walk, or taxi. Do not leave mobilityConstraint null merely because there is no walking difficulty.
 - STRICT EXCLUSION: Michi is exclusively for Seoul metropolitan civilian tourism, culture, food, and lifestyle. NEVER extract, include, or recommend anything related to North Korea (DPRK), DMZ, Panmunjom, border/security tours, defectors, or political military division.
 - Use 24-hour HH:mm. When no time is stated, default to 13:00 to 21:00.`;
+
+function selectedHotelName(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : null;
+}
+
+function isAccommodationName(value: string): boolean {
+  return /호텔|숙소|게스트하우스|호스텔|모텔|리조트|스테이|에어비앤비|비앤비|비엔비|\bb&b\b|\bbnb\b/iu.test(
+    value,
+  );
+}
+
+function replaceAccommodationAnchor(
+  anchor: AnchorPlacePreference | null,
+  hotelName: string | null,
+): AnchorPlacePreference | null {
+  if (!hotelName || !anchor || !isAccommodationName(anchor.name)) return anchor;
+  return { ...anchor, name: hotelName };
+}
+
+function sanitizeSelectedHotel(
+  day: DayTripPreference,
+  hotelName: string | null,
+): DayTripPreference {
+  if (!hotelName) return day;
+  return {
+    ...day,
+    startAnchor: replaceAccommodationAnchor(day.startAnchor ?? null, hotelName),
+    endAnchor: replaceAccommodationAnchor(day.endAnchor ?? null, hotelName),
+    anchorPlace: replaceAccommodationAnchor(day.anchorPlace ?? null, hotelName),
+    // A form-selected hotel is a base camp, never a model-created mandatory attraction.
+    mustVisitPlaces: (day.mustVisitPlaces ?? []).filter((name) => !isAccommodationName(name)),
+  };
+}
+
+function applySelectedAirportAnchors(
+  days: DayTripPreference[],
+  arrivalAirportName: string | null,
+  departureAirportName: string | null,
+): DayTripPreference[] {
+  if (days.length === 0) return days;
+
+  return days.map((day, index) => ({
+    ...day,
+    // 폼에서 선택한 공항은 모델의 호텔/추측 앵커보다 우선한다.
+    startAnchor:
+      index === 0 && arrivalAirportName
+        ? { name: arrivalAirportName, targetTime: day.startTime, role: 'start' }
+        : day.startAnchor,
+    endAnchor:
+      index === days.length - 1 && departureAirportName
+        ? { name: departureAirportName, targetTime: day.endTime, role: 'destination' }
+        : day.endAnchor,
+  }));
+}
+
+function timeBefore(time: string, minutes: number): string {
+  const [hour, minute] = time.split(':').map(Number);
+  const totalMinutes = Math.max(0, hour! * 60 + minute! - minutes);
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(
+    totalMinutes % 60,
+  ).padStart(2, '0')}`;
+}
+
+function applyExplicitDayTimeWindows(
+  days: DayTripPreference[],
+  input: PreferenceParseInput,
+): DayTripPreference[] {
+  if (days.length === 0) return days;
+
+  return days.map((day, index) => {
+    const isFirstDay = index === 0;
+    const isFinalDay = index === days.length - 1;
+    let startTime = isFirstDay && input.startTime ? input.startTime : day.startTime;
+    const endTime = isFinalDay && input.endTime ? input.endTime : day.endTime;
+
+    // 출국일의 비행 시각은 첫날 입국 시각과 비교하는 값이 아니다.
+    // 모델이 첫날 시작 시각을 마지막 날에 복제해도, 최소한 공항 이동 시간창으로
+    // 바꿔 시간 역전과 관광 일정 오인을 막는다.
+    if (days.length > 1 && isFinalDay && startTime >= endTime) {
+      startTime = timeBefore(endTime, 120);
+    }
+
+    return { ...day, startTime, endTime };
+  });
+}
 
 @Injectable()
 export class OpenAIProvider implements TripPreferenceParser {
@@ -81,6 +171,30 @@ export class OpenAIProvider implements TripPreferenceParser {
       if (input.endTime) explicitContextParts.push(`endTime: ${input.endTime}`);
       if (input.budget) explicitContextParts.push(`budget: ${input.budget}`);
       if (input.startArea) explicitContextParts.push(`startArea: ${input.startArea}`);
+      if (input.partySize) {
+        explicitContextParts.push(`partySize: ${input.partySize} (authoritative form selection)`);
+      }
+      if (input.hasLuggage) {
+        explicitContextParts.push(
+          'luggage: requires storage before sightseeing (authoritative form selection; prioritize hotel storage or a verified locker)',
+        );
+      }
+      const hotelName = selectedHotelName(input.hotelSelection?.name ?? input.hotel);
+      if (hotelName) {
+        explicitContextParts.push(`hotel: ${hotelName} (authoritative form selection)`);
+      }
+      const arrivalAirport = findVerifiedAirport(input.arrivalAirport);
+      const departureAirport = findVerifiedAirport(input.departureAirport);
+      if (arrivalAirport) {
+        explicitContextParts.push(
+          `arrivalAirport: ${arrivalAirport.nameKo} (authoritative form selection; Day 1 start)`,
+        );
+      }
+      if (departureAirport) {
+        explicitContextParts.push(
+          `departureAirport: ${departureAirport.nameKo} (authoritative form selection; final day end)`,
+        );
+      }
       const userContent =
         explicitContextParts.length > 0
           ? `[Explicit Form Constraints]\n${explicitContextParts.join('\n')}\n\n[User Natural Request]\n${input.text}`
@@ -113,7 +227,7 @@ export class OpenAIProvider implements TripPreferenceParser {
       const resolvedEndDate = input.endDate ?? response.output_parsed.endDate ?? null;
 
       const rawDays = response.output_parsed.days;
-      const days =
+      const unsanitizedDays: DayTripPreference[] =
         rawDays && rawDays.length > 0
           ? rawDays
           : [
@@ -137,13 +251,40 @@ export class OpenAIProvider implements TripPreferenceParser {
                 anchorPlace: response.output_parsed.anchorPlace,
               },
             ];
+      const days = applySelectedAirportAnchors(
+        applyExplicitDayTimeWindows(
+          unsanitizedDays.map((day) => sanitizeSelectedHotel(day, hotelName)),
+          input,
+        ),
+        arrivalAirport?.nameKo ?? null,
+        departureAirport?.nameKo ?? null,
+      );
 
       const preference: ParsedTripPreference = {
         ...response.output_parsed,
+        baseCamp: hotelName
+          ? {
+              name: hotelName,
+              checkInTime: response.output_parsed.baseCamp?.checkInTime ?? null,
+              checkOutTime: response.output_parsed.baseCamp?.checkOutTime ?? null,
+              dailyReturnTime: response.output_parsed.baseCamp?.dailyReturnTime ?? null,
+            }
+          : response.output_parsed.baseCamp,
+        airport:
+          arrivalAirport?.nameKo ??
+          departureAirport?.nameKo ??
+          findVerifiedAirport(input.airport)?.nameKo ??
+          response.output_parsed.airport,
         startDate: resolvedStartDate,
         endDate: resolvedEndDate,
         totalDays: response.output_parsed.totalDays ?? (days.length > 0 ? days.length : 1),
-        partySize: response.output_parsed.partySize ?? null,
+        partySize: input.partySize ?? response.output_parsed.partySize ?? null,
+        userPriorities: [
+          ...new Set([
+            ...(response.output_parsed.userPriorities ?? []),
+            ...(input.hasLuggage ? ['luggage_storage' as const] : []),
+          ]),
+        ],
         area: resolvedArea,
         startTime: resolvedStartTime,
         endTime: resolvedEndTime,

@@ -12,6 +12,7 @@ interface ErrorBody {
   code?: unknown;
   details?: unknown;
   message?: unknown;
+  recovery?: unknown;
 }
 
 @Catch()
@@ -52,6 +53,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
         : Array.isArray(body.message)
           ? { details: body.message }
           : {}),
+      ...(body.recovery !== undefined ? { recovery: body.recovery } : {}),
     });
   }
 }

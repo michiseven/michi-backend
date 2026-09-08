@@ -5,6 +5,14 @@ import type { RouteLegEstimate } from '../routing/routing-provider';
 import type { AccessibilityLegEvidence } from '../routing/accessibility-evidence';
 import { verifiedPlacePrice } from '../providers/place/place-price-evidence';
 import { localizePlaceName } from './place-name-localizer';
+import { findVerifiedAirport, type AirportInfo } from '../common/constants/airports.registry';
+import {
+  tripSafetyConstraints,
+  stopAccessibilitySafety,
+  type SafetyAssessment,
+  type SafetyRequest,
+  type TripSafetyConstraintsDto,
+} from './safety-constraints';
 
 interface TripStopWithPlace extends TripStop {
   place: Place;
@@ -59,6 +67,7 @@ export interface TripStopDto {
   };
   inboundRoute?: RouteLegEstimate | null;
   accessibility?: AccessibilityLegEvidence | null;
+  accessibilitySafety?: SafetyAssessment[];
   tourism?: {
     concentration: {
       value: number | null;
@@ -74,6 +83,30 @@ export interface TripStopDto {
     isAlternative: boolean;
     sourceRef: string | null;
   };
+}
+
+export interface AirportTransferDto {
+  /** An airport is an itinerary boundary, never a visitable TripStop. */
+  role: 'arrival' | 'departure';
+  appliesOn: 'first_day' | 'last_day';
+  dayNumber: number;
+  date: string;
+  at: string;
+  airport: {
+    code: AirportInfo['code'];
+    iata: AirportInfo['iata'];
+    terminal: AirportInfo['terminal'];
+    name: string;
+    address: string;
+  };
+  transfer: {
+    mode: null;
+    durationMinutes: null;
+    status: 'unavailable';
+    source: string;
+  };
+  /** Only relevant at the departure boundary; absent until flight data exists. */
+  bufferMinutes?: null;
 }
 
 export interface TripDto {
@@ -95,6 +128,10 @@ export interface TripDto {
   startTime: string;
   endTime: string;
   budget: number | null;
+  budgetInput?: {
+    amountKrw: number;
+    scope: 'total' | 'per_person';
+  } | null;
   estimatedTotalCost: number | null;
   constraintStatus?: {
     mobilityChecked: boolean;
@@ -102,6 +139,8 @@ export interface TripDto {
     mealWindowMatched: boolean;
     fixedAppointmentLocked: boolean;
   };
+  safetyConstraints?: TripSafetyConstraintsDto;
+  airportTransfers?: AirportTransferDto[];
   explanation?: TripExplanation | null;
   preference: Record<string, unknown>;
   appliedWeights: Record<string, number>;
@@ -154,9 +193,15 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
     trip.recommendationResult?.explanation?.locale === 'ko' || prefJson.locale === 'ko'
       ? 'ko'
       : 'ja';
+  const requestedSafetyConstraints = safetyRequests(prefJson.safetyConstraints);
+  const airportBoundaryTransfers = airportTransfers(prefJson, rawDays, responseLocale);
 
+  // Older generated trips may already have a persisted airport stop. Hide it
+  // from the visitable-stop contract as well; the airport boundary below is
+  // the sole public representation.
   const stops = ((trip.stops ?? []) as TripStopWithPlace[])
     .sort((a, b) => a.order - b.order)
+    .filter((stop) => !isAirportStop(stop))
     .map((stop): TripStopDto => {
       const coordinates = stop.place.location?.coordinates;
       if (!coordinates) {
@@ -222,6 +267,14 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
         scoreBreakdown: stop.scoreBreakdown,
         inboundRoute: stop.inboundRoute ?? null,
         accessibility: stop.accessibilityContext ?? null,
+        ...(stopAccessibilitySafety(requestedSafetyConstraints, stop.accessibilityContext)
+          ? {
+              accessibilitySafety: stopAccessibilitySafety(
+                requestedSafetyConstraints,
+                stop.accessibilityContext,
+              ),
+            }
+          : {}),
         ...imageDto(stop.place.rawPayload),
         ...placeDetailLinkDto(stop.place),
         ...(stop.tourismEvidence
@@ -261,6 +314,7 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
     startTime: trip.startTime.slice(0, 5),
     endTime: trip.endTime.slice(0, 5),
     budget: trip.budgetKrw,
+    ...(budgetInputDto(prefJson) ? { budgetInput: budgetInputDto(prefJson) } : {}),
     estimatedTotalCost: trip.totalEstimatedCost,
     constraintStatus: {
       mobilityChecked: stops.some((stop) => stop.accessibility?.status === 'checked'),
@@ -268,11 +322,133 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
       mealWindowMatched: stops.some((s) => s.stopType === 'meal'),
       fixedAppointmentLocked: stops.some((s) => s.stopType === 'fixed_appointment'),
     },
+    ...(requestedSafetyConstraints.length > 0
+      ? { safetyConstraints: tripSafetyConstraints(requestedSafetyConstraints) }
+      : {}),
+    ...(airportBoundaryTransfers ? { airportTransfers: airportBoundaryTransfers } : {}),
     explanation: trip.recommendationResult?.explanation ?? null,
     preference: prefJson,
     appliedWeights: trip.recommendationResult?.finalWeights ?? {},
     stops,
   };
+}
+
+function isAirportStop(stop: TripStopWithPlace): boolean {
+  return (
+    stop.stopType === 'airport' ||
+    stop.place.source === 'official_airport' ||
+    stop.place.category === 'airport' ||
+    findVerifiedAirport(stop.place.name) !== null
+  );
+}
+
+function airportTransfers(
+  preference: Record<string, unknown>,
+  days: Array<{
+    dayNumber: number;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+  }>,
+  locale: 'ko' | 'ja',
+): AirportTransferDto[] | undefined {
+  if (days.length === 0) return undefined;
+
+  // Deliberately use only explicitly directional fields. A legacy generic
+  // `airport` value is ambiguous and must not create two boundaries.
+  const arrival =
+    typeof preference.arrivalAirport === 'string'
+      ? findVerifiedAirport(preference.arrivalAirport)
+      : null;
+  const departure =
+    typeof preference.departureAirport === 'string'
+      ? findVerifiedAirport(preference.departureAirport)
+      : null;
+  const firstDay = days[0];
+  const lastDay = days[days.length - 1];
+  if (!firstDay || !lastDay) return undefined;
+
+  const result: AirportTransferDto[] = [];
+  if (arrival) {
+    result.push(airportTransfer('arrival', 'first_day', firstDay, arrival, locale));
+  }
+  if (departure) {
+    result.push(airportTransfer('departure', 'last_day', lastDay, departure, locale));
+  }
+  return result.length > 0 ? result : undefined;
+}
+
+function airportTransfer(
+  role: AirportTransferDto['role'],
+  appliesOn: AirportTransferDto['appliesOn'],
+  day: { dayNumber: number; date: string; startTime?: string; endTime?: string },
+  airport: AirportInfo,
+  locale: 'ko' | 'ja',
+): AirportTransferDto {
+  const isArrival = role === 'arrival';
+  return {
+    role,
+    appliesOn,
+    dayNumber: day.dayNumber,
+    date: day.date,
+    at: (isArrival ? day.startTime : day.endTime) ?? '',
+    airport: {
+      code: airport.code,
+      iata: airport.iata,
+      terminal: airport.terminal,
+      name: locale === 'ja' ? airport.nameJa : airport.nameKo,
+      address: airport.roadAddress,
+    },
+    transfer: {
+      mode: null,
+      durationMinutes: null,
+      status: 'unavailable',
+      source:
+        locale === 'ja'
+          ? '空港と市内の移動時間を検証する経路データはまだありません。'
+          : '공항과 시내 사이의 검증된 이동시간 데이터가 아직 없습니다.',
+    },
+    ...(isArrival ? {} : { bufferMinutes: null }),
+  };
+}
+
+function budgetInputDto(value: Record<string, unknown>): TripDto['budgetInput'] | undefined {
+  const input = value.budgetInput;
+  if (!input || typeof input !== 'object') return undefined;
+  const record = input as Record<string, unknown>;
+  if (
+    typeof record.amountKrw !== 'number' ||
+    !Number.isInteger(record.amountKrw) ||
+    record.amountKrw < 0 ||
+    (record.scope !== 'total' && record.scope !== 'per_person')
+  ) {
+    return undefined;
+  }
+  return { amountKrw: record.amountKrw, scope: record.scope };
+}
+
+function safetyRequests(value: unknown): SafetyRequest[] {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set<SafetyRequest['kind']>([
+    'food_allergy',
+    'medical',
+    'wheelchair',
+    'stroller',
+    'stairs_avoidance',
+  ]);
+  return value.flatMap((item): SafetyRequest[] => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.id !== 'string' ||
+      typeof record.kind !== 'string' ||
+      !allowed.has(record.kind as SafetyRequest['kind']) ||
+      (record.scope !== 'place' && record.scope !== 'route' && record.scope !== 'facility')
+    ) {
+      return [];
+    }
+    return [{ id: record.id, kind: record.kind as SafetyRequest['kind'], scope: record.scope }];
+  });
 }
 
 function placeDescriptionDto(

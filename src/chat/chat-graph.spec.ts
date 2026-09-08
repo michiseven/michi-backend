@@ -275,7 +275,11 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
           arrivalTime: '14:30',
           departureDate: '2026-09-04',
           departureTime: '11:00',
+          arrivalAirport: 'ICN_T2',
+          departureAirport: 'GMP_INTL',
           hotel: '명동 호텔',
+          partySize: 2,
+          hasLuggage: true,
         },
       },
       { configurable: { thread_id: 'thread-arrival-departure' } },
@@ -288,7 +292,11 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
         endDate: '2026-09-04',
         startTime: '14:30',
         endTime: '11:00',
+        arrivalAirport: 'ICN_T2',
+        departureAirport: 'GMP_INTL',
         hotel: '명동 호텔',
+        partySize: 2,
+        hasLuggage: true,
       }),
     );
   });

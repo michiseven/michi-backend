@@ -2,6 +2,7 @@ import { Annotation } from '@langchain/langgraph';
 import { BaseMessage } from '@langchain/core/messages';
 import type { TripDto } from '../trips/trip-response';
 import type { PlaceDetailEvidenceView } from '../place-details/place-detail-evidence.types';
+import type { TripRelaxation } from '../trips/trip-generation-recovery';
 
 export interface VerifiedPlaceFacts {
   placeId: string;
@@ -84,6 +85,10 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
+  relaxations: Annotation<TripRelaxation[]>({
+    reducer: (_, update) => update,
+    default: () => [],
+  }),
   modification: Annotation<{
     action: 'remove' | 'replace';
     targetStopId: string | null;
@@ -105,7 +110,15 @@ export const ChatAnnotation = Annotation.Root({
     endTime?: string;
     budget?: number;
     airport?: string;
+    arrivalAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
+    departureAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
     hotel?: string;
+    partySize?: number;
+    budgetScope?: 'total' | 'per_person';
+    companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+    pace?: 'relaxed' | 'standard' | 'packed';
+    safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
+    hasLuggage?: boolean;
   } | null>({
     reducer: (_, update) => update,
     default: () => null,
@@ -117,7 +130,16 @@ export const ChatAnnotation = Annotation.Root({
     arrivalTime?: string;
     departureDate?: string;
     departureTime?: string;
+    arrivalAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
+    departureAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
     hotel?: string;
+    partySize?: number;
+    budget?: number;
+    budgetScope?: 'total' | 'per_person';
+    companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+    pace?: 'relaxed' | 'standard' | 'packed';
+    safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
+    hasLuggage?: boolean;
   } | null>({
     reducer: (_, update) => update,
     default: () => null,

@@ -1,7 +1,7 @@
 export type CompanionType = 'solo' | 'couple' | 'friends' | 'family' | 'other';
 export type TravelPace = 'relaxed' | 'balanced' | 'packed';
 export type UserPriority =
-  'crowd_avoidance' | 'must_visit' | 'short_transit' | 'interest' | 'budget';
+  'crowd_avoidance' | 'must_visit' | 'short_transit' | 'interest' | 'budget' | 'luggage_storage';
 
 export interface AnchorPlacePreference {
   name: string;
@@ -94,11 +94,31 @@ export interface PreferenceParseInput {
   startTime?: string;
   endTime?: string;
   budget?: number;
+  budgetScope?: 'total' | 'per_person';
   startDate?: string;
   endDate?: string;
   travelDate?: string;
   airport?: string;
+  arrivalAirport?: string;
+  departureAirport?: string;
   hotel?: string;
+  hotelSelection?: {
+    name: string;
+    roadAddress?: string | null;
+    address?: string | null;
+    category?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    source?: string;
+    sourcePlaceId?: string;
+  };
+  partySize?: number;
+  companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+  pace?: 'relaxed' | 'standard' | 'packed';
+  hasLuggage?: boolean;
+  safetyConstraints?: Array<
+    'food_allergy' | 'medical' | 'wheelchair' | 'stroller' | 'stairs_avoidance'
+  >;
   locale?: 'ja' | 'ko';
 }
 

@@ -192,7 +192,15 @@ export class PreferencesService {
       endDate = totalDays > 1 ? addDaysSafe(startDate, totalDays - 1) : startDate;
     }
 
-    const totalBudget = input.budget ?? rawPref.totalBudgetKrw ?? rawPref.budget ?? null;
+    const resolvedPartySize =
+      input.partySize ??
+      rawPref.partySize ??
+      (input.text.includes('2') || input.text.includes('둘') ? 2 : 1);
+    const requestedBudget = input.budget ?? rawPref.totalBudgetKrw ?? rawPref.budget ?? null;
+    const totalBudget =
+      input.budget !== undefined && input.budgetScope === 'per_person'
+        ? input.budget * resolvedPartySize
+        : requestedBudget;
     const dailyBudget = totalBudget ? Math.round(totalBudget / totalDays) : null;
     const resolvedArea = normalizeSeoulArea(input.startArea ?? rawPref.area ?? '서울');
     const preferredTransit =
@@ -278,8 +286,12 @@ export class PreferencesService {
       endDate: endDate ?? startDate,
       totalDays,
       totalBudgetKrw: totalBudget,
-      partySize:
-        rawPref.partySize ?? (input.text.includes('2') || input.text.includes('둘') ? 2 : 1),
+      partySize: resolvedPartySize,
+      companions:
+        input.companions === 'with_children'
+          ? 'family'
+          : (input.companions ?? rawPref.companions ?? null),
+      pace: input.pace === 'standard' ? 'balanced' : (input.pace ?? rawPref.pace ?? null),
       area: resolvedArea,
       startTime: input.startTime ?? firstDay?.startTime ?? rawPref.startTime ?? '13:00',
       endTime: input.endTime ?? firstDay?.endTime ?? rawPref.endTime ?? '20:30',
@@ -305,7 +317,9 @@ export class PreferencesService {
     };
 
     const validated = this.schema.validate(preference);
-    if (validated.startTime >= validated.endTime) {
+    // 다일 여행에서는 첫날 입국 시각과 마지막 날 출국 시각을 비교할 수 없다.
+    // 같은 날짜의 하루 일정일 때만 종료 시각이 시작 시각보다 늦어야 한다.
+    if (validated.startDate === validated.endDate && validated.startTime >= validated.endTime) {
       throw new BadRequestException({
         code: 'INVALID_TIME_WINDOW',
         message: 'endTime must be later than startTime',

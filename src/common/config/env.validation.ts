@@ -99,6 +99,15 @@ function positiveInteger(value: unknown, fallback: number, name: string): number
   return parsed;
 }
 
+function firstTrimmedString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
 function positiveNumber(value: unknown, fallback: number, name: string): number {
   const parsed = Number(value ?? fallback);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -306,13 +315,34 @@ export function validateEnvironment(input: Record<string, unknown>): Record<stri
       30,
       'CHAT_CHECKPOINT_RETENTION_DAYS',
     ),
-    LOG_FRIENDS_INGEST_URL:
-      typeof input.LOG_FRIENDS_INGEST_URL === 'string'
-        ? input.LOG_FRIENDS_INGEST_URL.trim()
-        : undefined,
-    LOG_FRIENDS_WORKER_ID:
-      typeof input.LOG_FRIENDS_WORKER_ID === 'string'
-        ? input.LOG_FRIENDS_WORKER_ID.trim()
-        : 'michi-backend',
+    LOGFRIENDS_INGEST_URL: firstTrimmedString(
+      input.LOGFRIENDS_INGEST_URL,
+      input.LOG_FRIENDS_INGEST_URL,
+    ),
+    LOGFRIENDS_WORKER_ID:
+      firstTrimmedString(input.LOGFRIENDS_WORKER_ID, input.LOG_FRIENDS_WORKER_ID) ||
+      'michi-backend',
+    LOGFRIENDS_APP_NAME:
+      firstTrimmedString(input.LOGFRIENDS_APP_NAME, input.LOG_FRIENDS_APP_NAME) || 'michi',
+    LOGFRIENDS_BATCH_SIZE: positiveInteger(
+      input.LOGFRIENDS_BATCH_SIZE,
+      100,
+      'LOGFRIENDS_BATCH_SIZE',
+    ),
+    LOGFRIENDS_BATCH_INTERVAL_MS: positiveInteger(
+      input.LOGFRIENDS_BATCH_INTERVAL_MS,
+      500,
+      'LOGFRIENDS_BATCH_INTERVAL_MS',
+    ),
+    LOGFRIENDS_QUEUE_CAPACITY: positiveInteger(
+      input.LOGFRIENDS_QUEUE_CAPACITY,
+      10000,
+      'LOGFRIENDS_QUEUE_CAPACITY',
+    ),
+    LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES: positiveInteger(
+      input.LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES,
+      33_554_432,
+      'LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES',
+    ),
   };
 }

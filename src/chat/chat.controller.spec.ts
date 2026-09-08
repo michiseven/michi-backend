@@ -29,6 +29,13 @@ describe('ChatController', () => {
         status: 'completed',
         responseMessage: '수정 완료되었습니다',
       }),
+      cancelRun: jest.fn<any>().mockResolvedValue({
+        threadId: 'thread-123',
+        threadSecret: 'secret-123',
+        status: 'failed',
+        responseMessage: '일정 생성을 취소했어요.',
+        errorCode: 'CHAT_RUN_CANCELLED',
+      }),
       getThreadState: jest.fn<any>().mockImplementation((id: any) => {
         if (id === 'thread-123') {
           return Promise.resolve({
@@ -130,6 +137,20 @@ describe('ChatController', () => {
         editToken: 'edit-token-abc',
       },
     );
+  });
+
+  it('POST /chat/threads/:threadId/cancel passes the thread access secret', async () => {
+    const mockReq = {
+      headers: { 'x-thread-secret': 'secret-123' },
+    } as unknown as Request;
+
+    const res = await controller.cancelRun('thread-123', mockReq);
+
+    expect(res.errorCode).toBe('CHAT_RUN_CANCELLED');
+    expect(mockChatService.cancelRun).toHaveBeenCalledWith('thread-123', {
+      userId: null,
+      threadSecret: 'secret-123',
+    });
   });
 
   it('GET /chat/threads/:threadId/state queries thread state with secret', async () => {

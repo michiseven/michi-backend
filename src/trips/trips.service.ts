@@ -78,6 +78,8 @@ import { localizePlaceName } from './place-name-localizer';
 import { PlaceDescriptionTranslationService } from '../place-details/place-description-translation.service';
 import type { LocalizedPlaceDescription } from '../place-details/place-description-translation.service';
 import { LogEvent, LogField } from '@logfriends/sdk';
+import { resolveSafetyRequests, safetyWarnings } from './safety-constraints';
+import { tripGenerationRecovery } from './trip-generation-recovery';
 
 function matchesPlaceName(query: string, placeName: string): boolean {
   const q = query.toLowerCase().replace(/\s+/g, '');
@@ -205,6 +207,19 @@ function anchorRoleForPlace(
   return null;
 }
 
+/**
+ * Airports are trip boundaries.  They can be used to describe an arrival or
+ * departure transfer, but must never enter the place ranking/route pipeline:
+ * that pipeline assumes every candidate is a visitable stop with a dwell time.
+ */
+function isAirportPlace(place: Pick<Place, 'source' | 'category' | 'name'>): boolean {
+  return (
+    place.source === 'official_airport' ||
+    place.category === 'airport' ||
+    findVerifiedAirport(place.name) !== null
+  );
+}
+
 @Injectable()
 export class TripsService {
   constructor(
@@ -271,6 +286,7 @@ export class TripsService {
     incomingEditToken?: string,
   ): Promise<TripApiResponse> {
     const parsed = await this.preferences.parse(dto);
+    const relaxations = new Set(dto.relaxations ?? []);
     const area = parsed.preference.area ?? dto.startArea;
     if (!area) {
       throw new BadRequestException({
@@ -335,6 +351,20 @@ export class TripsService {
           preferences: parsed.preference.preferences,
           validatedJson: {
             ...parsed.preference,
+            // Keep explicit direction separate from the legacy generic `airport`
+            // field. The response can then render only a first-day arrival and a
+            // final-day departure boundary.
+            ...(dto.arrivalAirport ? { arrivalAirport: dto.arrivalAirport } : {}),
+            ...(dto.departureAirport ? { departureAirport: dto.departureAirport } : {}),
+            safetyConstraints: resolveSafetyRequests(dto.text, dto.safetyConstraints),
+            ...(dto.budget !== undefined
+              ? {
+                  budgetInput: {
+                    amountKrw: dto.budget,
+                    scope: dto.budgetScope ?? 'total',
+                  },
+                }
+              : {}),
             startDate: tripDays[0]?.date ?? travelDate,
             endDate: tripDays[tripDays.length - 1]?.date ?? travelDate,
             totalDays: tripDays.length,
@@ -361,7 +391,13 @@ export class TripsService {
           (day.maxWalkMinutes !== null &&
             day.maxWalkMinutes !== undefined &&
             day.maxWalkMinutes <= 15);
-        const searchRadiusMeters = hasWalkingConstraint ? 800 : 1_200;
+        const searchRadiusMeters = relaxations.has('search_radius')
+          ? hasWalkingConstraint
+            ? 1_200
+            : 2_000
+          : hasWalkingConstraint
+            ? 800
+            : 1_200;
 
         const dayPreference: ParsedTripPreference = {
           ...parsed.preference,
@@ -445,6 +481,8 @@ export class TripsService {
           (name, idx, arr) => name && !isAreaConstraint(name, dayArea) && arr.indexOf(name) === idx,
         );
 
+        // Airports are boundary metadata, not places to rank or visit.  Keep
+        // non-airport anchors (hotel, reservation, must-visit) in this pipeline.
         const targetAnchorNames = [
           ...(day.startAnchor ? [day.startAnchor.name] : []),
           ...mandatoryPlaceNames,
@@ -452,45 +490,56 @@ export class TripsService {
           ...(day.anchorPlace ? [day.anchorPlace.name] : []),
           ...(parsed.preference.baseCamp ? [parsed.preference.baseCamp.name] : []),
         ].filter(
-          (name, idx, arr) => name && !isAreaConstraint(name, dayArea) && arr.indexOf(name) === idx,
+          (name, idx, arr) =>
+            name &&
+            !isAreaConstraint(name, dayArea) &&
+            findVerifiedAirport(name) === null &&
+            arr.indexOf(name) === idx,
         );
 
         for (const targetName of targetAnchorNames) {
           const isMandatory = mandatoryPlaceNames.includes(targetName);
 
-          const verifiedAirport = findVerifiedAirport(targetName);
-          if (verifiedAirport) {
-            const existingAirport = await this.places.findOneBy({
-              source: 'official_airport',
-              sourcePlaceId: verifiedAirport.code,
+          // A hotel selected from the client already has a verified address/coordinate.
+          // Preserve that identity instead of re-searching only its display name, which can
+          // resolve to a different hotel with the same or similar name.
+          const selectedHotel = dto.hotelSelection;
+          if (
+            selectedHotel &&
+            matchesPlaceName(targetName, selectedHotel.name) &&
+            typeof selectedHotel.latitude === 'number' &&
+            typeof selectedHotel.longitude === 'number'
+          ) {
+            const sourcePlaceId =
+              selectedHotel.sourcePlaceId ??
+              `selected:${selectedHotel.name}:${selectedHotel.latitude}:${selectedHotel.longitude}`;
+            const existingHotel = await this.places.findOneBy({
+              source: 'user_selected_hotel',
+              sourcePlaceId,
             });
-            const airportEntity = await this.places.save(
+            const hotelEntity = await this.places.save(
               this.places.create({
-                ...existingAirport,
-                source: 'official_airport',
-                sourcePlaceId: verifiedAirport.code,
-                name: verifiedAirport.nameKo,
-                category: 'airport',
-                rawCategory: '공항',
-                address: verifiedAirport.address,
-                roadAddress: verifiedAirport.roadAddress,
-                district: verifiedAirport.code.startsWith('GMP') ? '강서구' : '중구',
+                ...existingHotel,
+                source: 'user_selected_hotel',
+                sourcePlaceId,
+                name: selectedHotel.name,
+                category: selectedHotel.category ?? 'hotel',
+                rawCategory: selectedHotel.category ?? '숙박',
+                address: selectedHotel.address ?? null,
+                roadAddress: selectedHotel.roadAddress ?? null,
+                district: seoulDistrictForArea(dayArea) ?? null,
                 location: {
                   type: 'Point',
-                  coordinates: [verifiedAirport.longitude, verifiedAirport.latitude],
+                  coordinates: [selectedHotel.longitude, selectedHotel.latitude],
                 },
                 rawPayload: {
-                  officialAirport: true,
-                  code: verifiedAirport.code,
-                  iata: verifiedAirport.iata,
-                  terminal: verifiedAirport.terminal,
-                  transitSummaryKo: verifiedAirport.transitSummaryKo,
-                  transitSummaryJa: verifiedAirport.transitSummaryJa,
-                  transitLines: verifiedAirport.transitLines,
+                  selectedHotel: true,
+                  source: selectedHotel.source ?? null,
+                  sourcePlaceId: selectedHotel.sourcePlaceId ?? null,
                 },
               }),
             );
-            anchorEntities.push(airportEntity);
+            anchorEntities.push(hotelEntity);
             continue;
           }
 
@@ -545,6 +594,7 @@ export class TripsService {
         ]);
 
         const candidates: CandidatePlace[] = deduplicated.places.flatMap((place) => {
+          if (isAirportPlace(place)) return [];
           if (!place.location) return [];
           const isAnchorPlace = anchorEntities.some((a) => a.id === place.id);
           const matchedAppt = day.fixedAppointments?.find((appointment) =>
@@ -606,6 +656,11 @@ export class TripsService {
           throw new UnprocessableEntityException({
             code: 'NO_FEASIBLE_ROUTE',
             message: `Day ${day.dayNumber} (${dayArea})에 가능한 여행 장소 후보가 없습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
           });
         }
 
@@ -628,6 +683,11 @@ export class TripsService {
           throw new UnprocessableEntityException({
             code: 'NO_UNIQUE_PLACE_CANDIDATES',
             message: `Day ${day.dayNumber} (${dayArea})에 앞선 날짜와 겹치지 않는 장소 후보가 없습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
           });
         }
 
@@ -666,10 +726,20 @@ export class TripsService {
           day.mealWindows ?? [],
         );
         if ((day.mealWindows?.length ?? 0) > 0 && cuisineFilter.matchedRestaurantCount === 0) {
-          throw new UnprocessableEntityException({
-            code: 'MEAL_CUISINE_NOT_FOUND',
-            message: `Day ${day.dayNumber} (${dayArea})에서 요청한 음식 종류와 확인 가능한 정보가 일치하는 식당을 찾지 못했습니다.`,
-          });
+          if (!relaxations.has('meal_cuisine')) {
+            throw new UnprocessableEntityException({
+              code: 'MEAL_CUISINE_NOT_FOUND',
+              message: `Day ${day.dayNumber} (${dayArea})에서 요청한 음식 종류와 확인 가능한 정보가 일치하는 식당을 찾지 못했습니다.`,
+              recovery: tripGenerationRecovery({
+                reason: 'meal_cuisine_unavailable',
+                dayNumber: day.dayNumber,
+                area: dayArea,
+              }),
+            });
+          }
+          routeWarnings.push(
+            `Day ${day.dayNumber}: 요청한 음식 종류를 확인할 수 있는 식당이 없어, 사용자가 선택한 완화 조건에 따라 음식 종류를 제한하지 않았습니다.`,
+          );
         }
         if (cuisineFilter.excludedRestaurantCount > 0) {
           routeWarnings.push(
@@ -683,8 +753,11 @@ export class TripsService {
             !candidate.fixedAppointment &&
             candidate.anchorRole === 'destination',
         );
-        const dayCandidates =
-          cuisineFilter.candidates.length > 0 ? cuisineFilter.candidates : ranking.candidates;
+        const dayCandidates = relaxations.has('meal_cuisine')
+          ? ranking.candidates
+          : cuisineFilter.candidates.length > 0
+            ? cuisineFilter.candidates
+            : ranking.candidates;
         const routeInput = {
           travelDate: dayDate,
           startTime: day.startTime,
@@ -692,11 +765,14 @@ export class TripsService {
           budget: day.dailyBudgetKrw ?? null,
           candidates: dayCandidates,
           maxWalkMinutes:
-            preferredTransit === null || preferredTransit === 'walk'
+            !relaxations.has('route_constraints') &&
+            (preferredTransit === null || preferredTransit === 'walk')
               ? (day.maxWalkMinutes ?? (hasWalkingConstraint ? 15 : null))
               : null,
           maxWalkDistanceKm:
-            hasWalkingConstraint && (preferredTransit === null || preferredTransit === 'walk')
+            !relaxations.has('route_constraints') &&
+            hasWalkingConstraint &&
+            (preferredTransit === null || preferredTransit === 'walk')
               ? 0.8
               : null,
           anchorPlaceId: primaryAnchor?.placeId ?? null,
@@ -713,6 +789,11 @@ export class TripsService {
           throw new UnprocessableEntityException({
             code: 'NO_FEASIBLE_ROUTE',
             message: `Day ${day.dayNumber} (${dayArea})에 제약 조건을 만족하는 이동 경로를 생성하지 못했습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'route_constraints_infeasible',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
           });
         }
 
@@ -722,10 +803,11 @@ export class TripsService {
           parsed.preference.mobilityConstraint?.preferredTransit ?? null,
           day.date ?? undefined,
           {
-            maxWalkMinutes:
-              day.maxWalkMinutes ??
-              parsed.preference.mobilityConstraint?.maxWalkMinutesPerLeg ??
-              null,
+            maxWalkMinutes: relaxations.has('route_constraints')
+              ? null
+              : (day.maxWalkMinutes ??
+                parsed.preference.mobilityConstraint?.maxWalkMinutesPerLeg ??
+                null),
             allowShortWalkSubstitution:
               !parsed.preference.mobilityConstraint?.avoidSteepInclineOrStairs,
           },
@@ -769,10 +851,11 @@ export class TripsService {
               parsed.preference.mobilityConstraint.preferredTransit ?? null,
               day.date ?? undefined,
               {
-                maxWalkMinutes:
-                  day.maxWalkMinutes ??
-                  parsed.preference.mobilityConstraint.maxWalkMinutesPerLeg ??
-                  null,
+                maxWalkMinutes: relaxations.has('route_constraints')
+                  ? null
+                  : (day.maxWalkMinutes ??
+                    parsed.preference.mobilityConstraint.maxWalkMinutesPerLeg ??
+                    null),
                 allowShortWalkSubstitution:
                   !parsed.preference.mobilityConstraint.avoidSteepInclineOrStairs,
               },
@@ -800,6 +883,11 @@ export class TripsService {
             throw new UnprocessableEntityException({
               code: 'ROUTE_EVIDENCE_INFEASIBLE',
               message: `Day ${day.dayNumber} (${dayArea})의 공식 이동시간을 반영하면 요청 시간 안에 일정을 완료할 수 없습니다.`,
+              recovery: tripGenerationRecovery({
+                reason: 'route_constraints_infeasible',
+                dayNumber: day.dayNumber,
+                area: dayArea,
+              }),
             });
           }
           route = measuredRoute;
@@ -823,6 +911,17 @@ export class TripsService {
           const ranked = ranking.candidates.find(
             (candidate) => candidate.place.placeId === item.placeId,
           );
+          if (item.stopType === 'meal' && ranked?.place.category !== 'restaurant') {
+            throw new UnprocessableEntityException({
+              code: 'PLACE_CATEGORY_ROLE_MISMATCH',
+              message: `Day ${day.dayNumber}의 식사 일정에 음식점으로 검증되지 않은 장소가 포함되었습니다. 다시 추천해 주세요.`,
+              recovery: tripGenerationRecovery({
+                reason: 'no_candidates',
+                dayNumber: day.dayNumber,
+                area: dayArea,
+              }),
+            });
+          }
           const breakdown = ranked?.scoreBreakdown ?? {
             total: 0,
             preference: 0,
@@ -1130,7 +1229,9 @@ export class TripsService {
   }
 
   async get(id: string, editToken?: string): Promise<TripApiResponse> {
-    return this.responseFor(await this.loadTrip(id), [], editToken);
+    const trip = await this.loadTrip(id);
+    this.assertTripReadAccess(trip, editToken);
+    return this.responseFor(trip, [], editToken);
   }
 
   @LogEvent({
@@ -1348,6 +1449,20 @@ export class TripsService {
     return new BadRequestException({ code: 'INVALID_STOP_ACTION', message });
   }
 
+  /**
+   * Generated trips are not yet user-owned records. Until a user-owned,
+   * revocable share snapshot exists, the opaque edit token is the only read
+   * capability. A UUID is an identifier, never a share grant.
+   */
+  private assertTripReadAccess(trip: Trip, editToken?: string): void {
+    if (!trip.editToken || !editToken || trip.editToken !== editToken) {
+      throw new ForbiddenException({
+        code: 'TRIP_READ_FORBIDDEN',
+        message: 'You do not have permission to read this trip.',
+      });
+    }
+  }
+
   private resolveTravelDate(explicit: string | undefined, text: string): string {
     if (explicit) return explicit;
     const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -1460,9 +1575,28 @@ export class TripsService {
       ...(priceWarning ? [priceWarning] : []),
       tourismWarning,
       ...(explanationWarning ? [explanationWarning] : []),
+      ...(Array.isArray(preferenceJson.preferences) &&
+      preferenceJson.preferences.includes('luggage_storage')
+        ? [
+            locale === 'ja'
+              ? '荷物預かりが必要として受け取りましたが、現在は施設ごとの空き状況・サイズ対応を確認できません。保管場所が確定するまで、荷物を持った移動を前提にご確認ください。'
+              : '짐 보관이 필요한 것으로 반영했지만, 현재는 장소별 보관 가능 여부·여유 공간·크기 제한을 확인할 수 없습니다. 보관 장소가 확인되기 전에는 짐을 든 이동을 전제로 직접 확인해 주세요.',
+          ]
+        : []),
+      ...(typeof preferenceJson.departureAirport === 'string'
+        ? [
+            locale === 'ja'
+              ? '空港到着時刻は旅程の終点として表示しています。搭乗手続き・保安検査の必要時間は便や航空会社ごとに異なるため、フライト時刻から逆算した余裕時間を別途ご確認ください。'
+              : '공항 도착 시각은 일정의 마지막 지점으로 표시합니다. 체크인·보안검색 여유 시간은 항공편과 항공사마다 다르므로, 항공편 시각에서 역산해 별도로 확인해 주세요.',
+          ]
+        : []),
     ];
+    const tripDto = toTripDto(trip, editToken);
+    const safetyConstraintWarnings = tripDto.safetyConstraints
+      ? safetyWarnings(tripDto.safetyConstraints)
+      : [];
     return {
-      trip: toTripDto(trip, editToken),
+      trip: tripDto,
       ...(isGeneration && editToken ? { editToken } : {}),
       providerModes: {
         place: trip.providerMode,
@@ -1482,7 +1616,7 @@ export class TripsService {
         place: this.placeProvider.name,
         crowd: this.crowdProvider.name,
       },
-      warnings: [...new Set([...warnings, ...providerWarnings])],
+      warnings: [...new Set([...warnings, ...providerWarnings, ...safetyConstraintWarnings])],
     };
   }
 
@@ -1514,8 +1648,13 @@ export class TripsService {
     return evidence;
   }
 
-  async getStopAlternatives(tripId: string, stopId: string): Promise<StopAlternativesResponse> {
+  async getStopAlternatives(
+    tripId: string,
+    stopId: string,
+    editToken?: string,
+  ): Promise<StopAlternativesResponse> {
     const trip = await this.loadTrip(tripId);
+    this.assertTripReadAccess(trip, editToken);
     const stop = trip.stops.find((s) => s.id === stopId);
     if (!stop) {
       throw new NotFoundException({ code: 'STOP_NOT_FOUND', message: 'Stop not found in trip' });

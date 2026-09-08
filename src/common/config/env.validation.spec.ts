@@ -101,6 +101,28 @@ describe('environment validation', () => {
     );
   });
 
+  it('normalizes Log Friends queue controls and accepts legacy names', () => {
+    expect(
+      validateEnvironment({
+        LOG_FRIENDS_INGEST_URL: ' https://console.example/ingest ',
+        LOG_FRIENDS_WORKER_ID: ' legacy-worker ',
+        LOG_FRIENDS_APP_NAME: ' legacy-app ',
+        LOGFRIENDS_BATCH_SIZE: '25',
+        LOGFRIENDS_BATCH_INTERVAL_MS: '750',
+        LOGFRIENDS_QUEUE_CAPACITY: '500',
+        LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES: '1048576',
+      }),
+    ).toMatchObject({
+      LOGFRIENDS_INGEST_URL: 'https://console.example/ingest',
+      LOGFRIENDS_WORKER_ID: 'legacy-worker',
+      LOGFRIENDS_APP_NAME: 'legacy-app',
+      LOGFRIENDS_BATCH_SIZE: 25,
+      LOGFRIENDS_BATCH_INTERVAL_MS: 750,
+      LOGFRIENDS_QUEUE_CAPACITY: 500,
+      LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES: 1_048_576,
+    });
+  });
+
   it('builds a URL from split PostgreSQL settings when DATABASE_URL is blank', () => {
     expect(
       resolveDatabaseUrl({

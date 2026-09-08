@@ -19,6 +19,12 @@ export interface ClassifiedIntent {
     budget?: number;
     airport?: string;
     hotel?: string;
+    partySize?: number;
+    budgetScope?: 'total' | 'per_person';
+    companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+    pace?: 'relaxed' | 'standard' | 'packed';
+    safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
+    hasLuggage?: boolean;
   };
 }
 

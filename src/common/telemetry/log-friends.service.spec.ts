@@ -13,8 +13,8 @@ describe('LogFriendsService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string) => {
-              if (key === 'LOG_FRIENDS_INGEST_URL') return 'http://localhost:8080/ingest';
-              if (key === 'LOG_FRIENDS_WORKER_ID') return 'michi-backend-test';
+              if (key === 'LOGFRIENDS_INGEST_URL') return 'http://localhost:8080/ingest';
+              if (key === 'LOGFRIENDS_WORKER_ID') return 'michi-backend-test';
               return undefined;
             }),
           },
