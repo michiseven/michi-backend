@@ -369,7 +369,7 @@ describe('TripsService atomic stop editing', () => {
       { mode: 'mock' } as never,
       {
         mode: 'mock',
-        search: jest.fn().mockResolvedValue({
+        search: jest.fn().mockImplementation(({ area }: { area: string }) => Promise.resolve({
           places: [
             {
               provider: 'naver',
@@ -398,17 +398,17 @@ describe('TripsService atomic stop editing', () => {
             {
               provider: 'naver',
               sourcePlaceId: '2',
-              name: '카페 B',
-              category: 'cafe',
+              name: area === '성수' ? '성수 편집숍 B' : '카페 B',
+              category: area === '성수' ? 'shopping' : 'cafe',
               address: '서울',
               roadAddress: null,
               latitude: 37.51,
               longitude: 127.01,
-              rawCategory: '카페',
+              rawCategory: area === '성수' ? '쇼핑' : '카페',
               rawPayload: {},
             },
           ],
-        }),
+        })),
       } as unknown as PlaceProvider,
       { mode: 'mock', getAreaCrowd: jest.fn().mockResolvedValue(null) } as unknown as CrowdProvider,
       {
