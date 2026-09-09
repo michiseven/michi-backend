@@ -160,6 +160,10 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
+  clarificationQuestion: Annotation<string | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
   actionChips: Annotation<Array<{ label: string; query: string; type?: string }>>({
     reducer: (_, update) => update,
     default: () => [],

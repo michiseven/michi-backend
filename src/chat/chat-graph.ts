@@ -45,7 +45,7 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
   const workflow = new StateGraph(ChatAnnotation)
     // 1. Register Nodes
     .addNode('validate_input', createValidateInputNode())
-    .addNode('classify_intent', createClassifyIntentNode())
+    .addNode('classify_intent', createClassifyIntentNode(deps.openaiApiKey))
     .addNode('load_verified_facts', createLoadVerifiedFactsNode(deps.placesRepo, deps.tripsRepo))
     .addNode('enrich_place_details', createEnrichPlaceDetailsNode(deps.placeDetailEnrichment))
     .addNode('answer_grounded', createAnswerGroundedQuestionNode())

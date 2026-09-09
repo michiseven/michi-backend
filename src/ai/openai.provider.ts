@@ -51,7 +51,8 @@ Rules:
   * If the user indicates walking difficulties or wants short walks (e.g. 15 mins max, avoid stairs/hills), extract into mobilityConstraint with maxWalkMinutesPerLeg and avoidSteepInclineOrStairs=true.
   * If the user explicitly prefers subway, bus, walking, or taxi, always set mobilityConstraint.preferredTransit to subway, bus, walk, or taxi. Do not leave mobilityConstraint null merely because there is no walking difficulty.
 - STRICT EXCLUSION: Michi is exclusively for Seoul metropolitan civilian tourism, culture, food, and lifestyle. NEVER extract, include, or recommend anything related to North Korea (DPRK), DMZ, Panmunjom, border/security tours, defectors, or political military division.
-- Use 24-hour HH:mm. When no time is stated, default to 13:00 to 21:00.`;
+- Default profile: when the user omits a constraint, assume a first-time Japanese solo visitor who knows little about Seoul. Use partySize=1, companions=solo, pace=balanced, budget=60000 KRW, and a 13:00 to 17:00 half-day. If no area or activity is provided, use 서촌 as the first-visit cultural default; expose these as adjustable product defaults, not user-stated facts.
+- Use 24-hour HH:mm. When no time is stated, default to 13:00 to 17:00.`;
 
 function selectedHotelName(value: string | undefined): string | null {
   const normalized = value?.trim();

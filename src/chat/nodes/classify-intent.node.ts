@@ -1,18 +1,21 @@
 import type { ChatState, ChatUpdate } from '../chat-state';
 import { classifyIntentRuleBased } from '../chat-intent';
+import { classifyIntentWithLlm } from '../chat-intent-llm';
 
-export function createClassifyIntentNode() {
-  return (state: ChatState): Promise<ChatUpdate> => {
+export function createClassifyIntentNode(openaiApiKey?: string) {
+  return async (state: ChatState): Promise<ChatUpdate> => {
     // If validation node already completed response (e.g. North Korea check)
     if (state.responseMessage) {
-      return Promise.resolve({});
+      return {};
     }
 
     const lastMsg = state.messages[state.messages.length - 1];
     const text = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
     const hasActiveTrip = Boolean(state.currentTripId);
 
-    const classification = classifyIntentRuleBased(text, hasActiveTrip);
+    const classification =
+      (await classifyIntentWithLlm(openaiApiKey, text, hasActiveTrip)) ??
+      classifyIntentRuleBased(text, hasActiveTrip);
     const form = state.formTripContext;
     const mod = classification.modification;
     const modification = mod
@@ -50,10 +53,11 @@ export function createClassifyIntentNode() {
         }
       : null;
 
-    return Promise.resolve({
+    return {
       intent: classification.intent,
+      clarificationQuestion: classification.clarificationQuestion ?? null,
       modification,
       createTripInput,
-    });
+    };
   };
 }
