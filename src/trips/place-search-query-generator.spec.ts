@@ -1,5 +1,8 @@
 import type { ParsedTripPreference } from '../preferences/preference.types';
-import { PlaceSearchQueryGenerator } from './place-search-query-generator';
+import {
+  PlaceSearchQueryGenerator,
+  generatePlaceSearchQueriesByRole,
+} from './place-search-query-generator';
 
 describe('PlaceSearchQueryGenerator', () => {
   it('uses a specific cuisine query without adding a generic restaurant query', () => {
@@ -59,5 +62,48 @@ describe('PlaceSearchQueryGenerator', () => {
     expect(generator.generate(preference, 0)).toEqual(['카페', '맛집']);
     expect(generator.generate(preference, 1)).toEqual(['베이커리 카페', '한식 맛집']);
     expect(generator.generate(preference, 2)).toEqual(['디저트 카페', '로컬 맛집']);
+  });
+
+  it('prioritizes park, trail, waterfront, and garden queries for a stroll role', () => {
+    const preference = {
+      area: '홍대',
+      startTime: '13:00',
+      endTime: '18:00',
+      budget: 80_000,
+      companions: 'solo',
+      pace: 'relaxed',
+      interests: ['stroll'],
+      preferences: [],
+      avoid: [],
+    } satisfies ParsedTripPreference;
+    const generator = new PlaceSearchQueryGenerator();
+
+    expect(generator.generate(preference, 0)).toEqual(['공원']);
+    expect(generator.generate(preference, 1)).toEqual(['산책로']);
+    expect(generator.generate(preference, 2)).toEqual(['하천변']);
+    expect(generator.generate(preference, 3)).toEqual(['정원']);
+  });
+
+  it('keeps role metadata for diagnostics while preserving the legacy query list', () => {
+    const preference = {
+      area: '홍대',
+      startTime: '13:00',
+      endTime: '18:00',
+      budget: 80_000,
+      companions: 'solo',
+      pace: 'relaxed',
+      interests: ['cafe', 'stroll'],
+      preferences: [],
+      avoid: [],
+    } satisfies ParsedTripPreference;
+
+    expect(generatePlaceSearchQueriesByRole(preference, 1)).toEqual([
+      { role: 'cafe', query: '베이커리 카페', variationIndex: 1 },
+      { role: 'stroll', query: '산책로', variationIndex: 1 },
+    ]);
+    expect(new PlaceSearchQueryGenerator().generate(preference, 1)).toEqual([
+      '베이커리 카페',
+      '산책로',
+    ]);
   });
 });

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { isNorthKoreaRelated } from '../common/utils/security-filter.util';
+import { STROLL_ACCEPTED_PLACE_CATEGORIES } from '../preferences/preference.types';
 import { coordinatesOf, haversineDistanceKm, type Coordinates } from './geo';
 import type {
   CandidatePlace,
@@ -36,6 +37,9 @@ const CATEGORY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   food: ['restaurant'],
   restaurant: ['restaurant'],
   park: ['park'],
+  // A generic stroll is its own activity role; park is an acceptable place
+  // type for it, but an explicit park request does not accept stroll-only sites.
+  stroll: STROLL_ACCEPTED_PLACE_CATEGORIES,
   culture: ['culture'],
   night_view: ['park', 'culture', 'attraction'],
   photography: ['park', 'culture', 'attraction'],
@@ -55,6 +59,7 @@ const CATEGORY_LABELS: Readonly<Record<string, readonly [string, string]>> = {
   restaurant: ['음식점', '飲食店'],
   culture: ['문화시설', '文化施設'],
   park: ['공원', '公園'],
+  stroll: ['산책 장소', '散歩スポット'],
   leisure: ['레저', 'レジャー'],
   attraction: ['관광명소', '観光スポット'],
 };
@@ -90,7 +95,8 @@ export function isAlleywayMarket(place: CandidatePlace): boolean {
 export function localImpactScore(place: CandidatePlace): number {
   if (place.isAnchor) return 1.0;
   if (isFranchisePlace(place)) return 0.2;
-  if (place.category === 'culture' || place.category === 'park') return 0.75;
+  if (place.category === 'culture' || place.category === 'park' || place.category === 'stroll')
+    return 0.75;
 
   let base = 0.9;
   if (isAlleywayMarket(place)) {
@@ -348,7 +354,13 @@ function diversityScore(
 }
 
 function defaultStayMinutes(category: string | null): number {
-  if (category === 'park' || category === 'culture' || category === 'restaurant') return 75;
+  if (
+    category === 'park' ||
+    category === 'stroll' ||
+    category === 'culture' ||
+    category === 'restaurant'
+  )
+    return 75;
   if (category === 'shopping') return 50;
   return 60;
 }

@@ -274,4 +274,90 @@ describe('ChatService', () => {
       }),
     );
   });
+
+  it('rejects a stale structured meal answer before intent classification or generation', async () => {
+    const { threadId, threadSecret } = await service.createThread({ locale: 'ja' });
+    const pending = await service.sendMessage(
+      threadId,
+      { message: '弘大でランチとカフェを楽しみたい', locale: 'ja' },
+      { threadSecret },
+    );
+
+    expect(pending.pendingQuestion?.id).toBe('meal-choice-1');
+    expect(pending.actionChips?.[0]).toMatchObject({
+      questionId: 'meal-choice-1',
+      optionId: 'korean',
+    });
+    const generate = (mockTripsService as { generate: jest.Mock }).generate;
+    generate.mockClear();
+
+    const stale = await service.sendMessage(
+      threadId,
+      {
+        message: '한식으로 추천해줘',
+        locale: 'ja',
+        questionId: 'meal-choice-0',
+        optionId: 'korean',
+        expectedRevision: 1,
+      },
+      { threadSecret },
+    );
+
+    expect(stale.errorCode).toBe('STALE_QUESTION');
+    expect(stale.responseMessage).toContain('古い質問');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('returns the cached response for a duplicate requestId without generating twice', async () => {
+    const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
+    const generate = (mockTripsService as { generate: jest.Mock }).generate;
+    const first = await service.sendMessage(
+      threadId,
+      { message: '성수동 카페 일정 짜줘', locale: 'ko', requestId: 'request-1' },
+      { threadSecret },
+    );
+    await service.sendMessage(
+      threadId,
+      { message: '이상의집이 뭐야?', locale: 'ko', requestId: 'request-2' },
+      { threadSecret },
+    );
+    generate.mockClear();
+
+    const duplicate = await service.sendMessage(
+      threadId,
+      { message: '성수동 카페 일정 짜줘', locale: 'ko', requestId: 'request-1' },
+      { threadSecret },
+    );
+
+    expect(duplicate.responseMessage).toBe(first.responseMessage);
+    expect(duplicate.resultTripId).toBe(first.resultTripId);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('bounds the request cache to the most recent twenty entries', async () => {
+    const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
+    const generate = (mockTripsService as { generate: jest.Mock }).generate;
+    await service.sendMessage(
+      threadId,
+      { message: '성수동 카페 일정 짜줘', locale: 'ko', requestId: 'request-0' },
+      { threadSecret },
+    );
+
+    for (let index = 1; index <= 20; index += 1) {
+      await service.sendMessage(
+        threadId,
+        { message: '이상의집이 뭐야?', locale: 'ko', requestId: `request-${index}` },
+        { threadSecret },
+      );
+    }
+    generate.mockClear();
+
+    await service.sendMessage(
+      threadId,
+      { message: '성수동 카페 일정 짜줘', locale: 'ko', requestId: 'request-0' },
+      { threadSecret },
+    );
+
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
 });

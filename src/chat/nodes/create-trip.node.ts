@@ -10,12 +10,11 @@ export function createCreateTripNode(tripsService: TripsService) {
     const lastMsg = state.messages[state.messages.length - 1];
     const rawText = typeof lastMsg?.content === 'string' ? lastMsg.content : '서울 여행';
 
-    const area = input?.startArea || '성수';
-
     try {
       const generated = await tripsService.generate({
         text: input?.text || rawText,
-        startArea: area,
+        startArea: input?.startArea,
+        locale: state.locale,
         travelDate: input?.travelDate,
         startDate: input?.startDate,
         endDate: input?.endDate,
@@ -38,6 +37,19 @@ export function createCreateTripNode(tripsService: TripsService) {
         mealPreference: input?.mealPreference,
         mealCuisine: input?.mealCuisine,
       });
+
+      // The parser is the source of truth after generation. The request area
+      // can be inferred or normalized, while the saved preference is the area
+      // actually used for candidate search and the itinerary title.
+      const generatedPreference = generated.trip.preference as
+        { area?: unknown; days?: Array<{ area?: unknown }> } | undefined;
+      const generatedArea =
+        typeof generatedPreference?.area === 'string'
+          ? generatedPreference.area
+          : typeof generatedPreference?.days?.[0]?.area === 'string'
+            ? generatedPreference.days[0].area
+            : undefined;
+      const area = generatedArea ?? input?.startArea ?? (isKo ? '서울' : 'ソウル');
 
       const currency = new Intl.NumberFormat(isKo ? 'ko-KR' : 'ja-JP');
       let costFeedback = '';

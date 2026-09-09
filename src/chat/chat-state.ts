@@ -68,6 +68,58 @@ export interface ResumePayload {
   chosenPlaceId?: string;
 }
 
+export interface ChatCreateTripInput {
+  text: string;
+  startArea?: string;
+  travelDate?: string;
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  budget?: number;
+  airport?: string;
+  arrivalAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
+  departureAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
+  hotel?: string;
+  partySize?: number;
+  budgetScope?: 'total' | 'per_person';
+  companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
+  pace?: 'relaxed' | 'standard' | 'packed';
+  safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
+  hasLuggage?: boolean;
+  mealPreference?: 'local_specialty';
+  mealCuisine?: import('../preferences/preference.types').MealCuisine;
+}
+
+export interface PendingChatQuestionOption {
+  id: string;
+  mealPreference?: 'local_specialty';
+  mealCuisine?: import('../preferences/preference.types').MealCuisine;
+}
+
+export interface PendingChatQuestion {
+  id: string;
+  target: 'meal';
+  reason: 'meal_choice_required';
+  revision: number;
+  options: PendingChatQuestionOption[];
+}
+
+export interface StructuredChatChoice {
+  questionId: string;
+  optionId: string;
+}
+
+export type CachedChatResponse = Omit<
+  import('./dto/chat-response.dto').ChatResponseDto,
+  'threadId' | 'threadSecret' | 'editToken'
+>;
+
+export interface CachedChatRequest {
+  requestId: string;
+  response: CachedChatResponse;
+}
+
 export const ChatAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     reducer: (curr, update) => curr.concat(update),
@@ -112,30 +164,36 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
-  createTripInput: Annotation<{
-    text: string;
-    startArea?: string;
-    travelDate?: string;
-    startDate?: string;
-    endDate?: string;
-    startTime?: string;
-    endTime?: string;
-    budget?: number;
-    airport?: string;
-    arrivalAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
-    departureAirport?: 'ICN_T1' | 'ICN_T2' | 'GMP_INTL' | 'GMP_DOM';
-    hotel?: string;
-    partySize?: number;
-    budgetScope?: 'total' | 'per_person';
-    companions?: 'solo' | 'couple' | 'friends' | 'family' | 'with_children';
-    pace?: 'relaxed' | 'standard' | 'packed';
-    safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
-    hasLuggage?: boolean;
-    mealPreference?: 'local_specialty';
-    mealCuisine?: import('../preferences/preference.types').MealCuisine;
-  } | null>({
+  createTripInput: Annotation<ChatCreateTripInput | null>({
     reducer: (_, update) => update,
     default: () => null,
+  }),
+  /** Persisted contract for a question that must be answered before creation. */
+  pendingQuestion: Annotation<PendingChatQuestion | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  /** Original request retained while a structured choice is being collected. */
+  pendingCreateTripInput: Annotation<ChatCreateTripInput | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  structuredChoice: Annotation<StructuredChatChoice | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  lastRequestId: Annotation<string | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  lastRequestResponse: Annotation<CachedChatResponse | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  /** Bounded idempotency cache; legacy lastRequest* fields remain for migration. */
+  recentRequests: Annotation<CachedChatRequest[]>({
+    reducer: (_, update) => update,
+    default: () => [],
   }),
   // 상단 여행 폼의 값은 현재 턴에만 사용한다. ChatService가 다음 요청 때 null로
   // 초기화하여 이전 여행 기간이 checkpoint에서 재사용되지 않게 한다.
@@ -187,6 +245,8 @@ export const ChatAnnotation = Annotation.Root({
       label: string;
       query: string;
       type?: string;
+      questionId?: string;
+      optionId?: string;
       mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
       mealPreference?: 'local_specialty';
       mealCuisine?: import('../preferences/preference.types').MealCuisine;

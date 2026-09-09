@@ -1,4 +1,10 @@
-import type { TripRelaxation } from '../trips/trip-generation-recovery';
+import type {
+  TripGenerationFailureDiagnostics,
+  TripGenerationFailureStage,
+  TripGenerationRecovery,
+  TripRelaxation,
+} from '../trips/trip-generation-recovery';
+import type { PublicationValidation } from '../trips/completed-itinerary-eligibility';
 
 type Locale = 'ko' | 'ja';
 
@@ -6,6 +12,10 @@ type Locale = 'ko' | 'ja';
 export interface GenerationFailure {
   code: string;
   message: string;
+  stage?: TripGenerationFailureStage;
+  affectedRequirement?: string;
+  diagnostics?: TripGenerationFailureDiagnostics;
+  validation?: PublicationValidation;
   chips: Array<{
     label: string;
     query: string;
@@ -31,8 +41,30 @@ function exceptionCode(error: unknown): string | null {
     : null;
 }
 
+function exceptionRecovery(error: unknown): TripGenerationRecovery | null {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  if (!response || typeof response !== 'object') return null;
+  const recovery = (response as { recovery?: unknown }).recovery;
+  if (!recovery || typeof recovery !== 'object') return null;
+  return recovery as TripGenerationRecovery;
+}
+
+function exceptionValidation(error: unknown): PublicationValidation | null {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  if (!response || typeof response !== 'object') return null;
+  const validation = (response as { validation?: unknown }).validation;
+  return validation && typeof validation === 'object'
+    ? (validation as PublicationValidation)
+    : null;
+}
+
 const KNOWN_CODES = new Set([
   'AREA_REQUIRED',
+  'AREA_FILTER_UNAVAILABLE',
+  'AREA_CONSTRAINTS_VIOLATED',
+  'PLACE_PROVIDER_UNAVAILABLE',
   'NO_FEASIBLE_ROUTE',
   'MEAL_CUISINE_NOT_FOUND',
   'MANDATORY_PLACE_NOT_FOUND',
@@ -61,7 +93,11 @@ const edit = (label: string, query: string): FailureChip => ({
   requiresUserEdit: true,
 });
 
-function copy(locale: Locale, code: string): Omit<GenerationFailure, 'code'> {
+function copy(
+  locale: Locale,
+  code: string,
+  recovery: TripGenerationRecovery | null,
+): Omit<GenerationFailure, 'code'> {
   const ko = locale === 'ko';
   const text = (korean: string, japanese: string): string => (ko ? korean : japanese);
   const nearby = (): FailureChip =>
@@ -93,6 +129,17 @@ function copy(locale: Locale, code: string): Omit<GenerationFailure, 'code'> {
       text('조건을 수정해서 다시 일정 짜줘', '条件を修正して旅程を作って'),
     );
 
+  const area = (): FailureChip =>
+    edit(
+      text('지역을 직접 수정하기', 'エリアを修正する'),
+      text('지역을 직접 확인해서 다시 일정 짜줘', 'エリアを確認して旅程を作って'),
+    );
+  const retryProvider = (): FailureChip => ({
+    label: text('같은 조건으로 다시 시도', '同じ条件で再試行'),
+    query: text('같은 조건으로 다시 찾아줘', '同じ条件で再検索して'),
+    type: 'refine' as const,
+  });
+
   switch (code) {
     case 'AREA_REQUIRED':
       return {
@@ -105,13 +152,30 @@ function copy(locale: Locale, code: string): Omit<GenerationFailure, 'code'> {
           edit(text('성수 지정', '聖水を指定'), text('성수에서 일정 짜줘', '聖水で旅程を作って')),
         ],
       };
+    case 'AREA_FILTER_UNAVAILABLE':
+    case 'AREA_CONSTRAINTS_VIOLATED':
+      return {
+        message: text(
+          '요청한 지역의 경계를 확인할 수 없어 서울 전체 장소로 대신하지 않았습니다. 지역을 확인해 주세요.',
+          '指定エリアの境界を確認できないため、ソウル全体のスポットで代用しませんでした。エリアを確認してください。',
+        ),
+        chips: [area()],
+      };
+    case 'PLACE_PROVIDER_UNAVAILABLE':
+      return {
+        message: text(
+          '외부 장소 검색에 일시적인 문제가 있어 일정을 완성하지 않았습니다. 같은 조건으로 다시 시도해 주세요.',
+          '外部スポット検索に一時的な問題があるため、旅程を完成として表示しませんでした。同じ条件で再試行してください。',
+        ),
+        chips: [retryProvider()],
+      };
     case 'MEAL_CUISINE_NOT_FOUND':
       return {
         message: text(
           '지정한 음식 종류의 검증 가능한 식사 장소가 없습니다. 음식 종류나 지역을 조정해 주세요.',
           '指定した料理の確認可能な食事スポットがありません。料理かエリアを調整してください。',
         ),
-        chips: [cuisine(), nearby(), route()],
+        chips: recovery?.stage === 'role' ? [cuisine(), nearby()] : [cuisine(), nearby(), route()],
       };
     case 'THEME_EVIDENCE_MISSING':
       return {
@@ -167,6 +231,24 @@ function copy(locale: Locale, code: string): Omit<GenerationFailure, 'code'> {
         chips: [specify()],
       };
     case 'NO_FEASIBLE_ROUTE':
+      if (recovery?.stage === 'area') {
+        return {
+          message: text(
+            '요청한 지역의 경계를 확인할 수 없어 서울 전체 장소로 대신하지 않았습니다. 지역을 확인해 주세요.',
+            '指定エリアの境界を確認できないため、ソウル全体のスポットで代用しませんでした。エリアを確認してください。',
+          ),
+          chips: [area()],
+        };
+      }
+      if (recovery?.stage === 'candidate' || recovery?.stage === 'role') {
+        return {
+          message: text(
+            '요청한 역할에 맞는 검증 장소를 확보하지 못했습니다. 후보를 더 찾거나 조건을 직접 수정해 주세요.',
+            '指定した役割に合う確認済みスポットを確保できませんでした。候補を増やすか条件を修正してください。',
+          ),
+          chips: [nearby(), specify()],
+        };
+      }
       return {
         message: text(
           '지정한 조건을 함께 만족하는 검증 가능한 경로가 없습니다. 지역이나 이동 조건을 조정해 주세요.',
@@ -188,5 +270,14 @@ function copy(locale: Locale, code: string): Omit<GenerationFailure, 'code'> {
 export function generationFailure(error: unknown, locale: Locale): GenerationFailure {
   const sourceCode = exceptionCode(error);
   const code = sourceCode && KNOWN_CODES.has(sourceCode) ? sourceCode : 'GENERATION_UNAVAILABLE';
-  return { code, ...copy(locale, code) };
+  const recovery = exceptionRecovery(error);
+  const validation = exceptionValidation(error);
+  return {
+    code,
+    ...(recovery?.stage ? { stage: recovery.stage } : {}),
+    ...(recovery?.affectedRequirement ? { affectedRequirement: recovery.affectedRequirement } : {}),
+    ...(recovery?.diagnostics ? { diagnostics: recovery.diagnostics } : {}),
+    ...(validation ? { validation } : {}),
+    ...copy(locale, code, recovery),
+  };
 }

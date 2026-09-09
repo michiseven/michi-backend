@@ -53,15 +53,32 @@ describe('PreferencesService', () => {
     expect(resultJa.preference.maxWalkMinutes).toBe(7);
   });
 
-  it('keeps a generic walk out of park themes while preserving an explicit Hanok category', async () => {
+  it('keeps a generic walk distinct from park while preserving an explicit Hanok category', async () => {
     const walk = await service.parse({
       text: '홍대에서 13시부터 18시까지 점심 먹고 카페와 산책하고 싶어.',
     });
     expect(walk.preference.interests).not.toContain('park');
+    expect(walk.preference.interests).toContain('stroll');
     expect(walk.preference.days?.[0]?.interests).not.toContain('park');
+    expect(walk.preference.days?.[0]?.interests).toContain('stroll');
 
     const hanok = await service.parse({ text: '반드시 한옥을 포함한 북촌 일정 짜줘.' });
     expect(hanok.preference.days?.[0]?.preferences).toContain('한옥');
+  });
+
+  it('does not turn a dislike of walking into the stroll activity', async () => {
+    const result = await service.parse({
+      text: '홍대에서 걷기 싫어. 카페만 가고 싶어.',
+    });
+
+    expect(result.preference.interests).not.toContain('stroll');
+    expect(result.preference.days?.[0]?.interests).not.toContain('stroll');
+
+    const japanese = await service.parse({ text: '散歩が苦手なので、静かなカフェに行きたい。' });
+    expect(japanese.preference.interests).not.toContain('stroll');
+
+    const dislike = await service.parse({ text: '산책을 좋아하지 않아. 카페에 가고 싶어.' });
+    expect(dislike.preference.interests).not.toContain('stroll');
   });
 
   it('applies a structured cuisine choice to the original Hongdae lunch without inventing dinner', async () => {

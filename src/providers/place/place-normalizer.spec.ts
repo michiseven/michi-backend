@@ -84,6 +84,10 @@ describe('NAVER place normalization', () => {
     ['한식>냉면', 'restaurant'],
     ['한식>곱창,막창,양', 'restaurant'],
     ['음식점>카페>커피전문점', 'cafe'],
+    ['여행>명소>산책로', 'stroll'],
+    ['여행>명소>하천변', 'stroll'],
+    ['여행>명소>정원', 'stroll'],
+    ['여행>명소>공원', 'park'],
   ])('normalizes the complete NAVER category hierarchy %s as %s', (category, expected) => {
     const record = normalizeNaverLocalItem({
       title: '공덕 테스트 장소',

@@ -2,6 +2,10 @@ export type CompanionType = 'solo' | 'couple' | 'friends' | 'family' | 'other';
 export type TravelPace = 'relaxed' | 'balanced' | 'packed';
 export const MEAL_CUISINES = ['korean', 'japanese', 'chinese', 'western', 'cafe_dessert'] as const;
 export type MealCuisine = (typeof MEAL_CUISINES)[number];
+/** A requested stroll is an activity role, distinct from an explicit park theme. */
+export const STROLL_INTEREST = 'stroll' as const;
+export type ActivityInterest = typeof STROLL_INTEREST;
+export const STROLL_ACCEPTED_PLACE_CATEGORIES = ['park', 'stroll'] as const;
 export type UserPriority =
   'crowd_avoidance' | 'must_visit' | 'short_transit' | 'interest' | 'budget' | 'luggage_storage';
 

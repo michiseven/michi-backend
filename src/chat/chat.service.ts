@@ -248,17 +248,71 @@ export class ChatService implements OnModuleInit {
     const previousSnapshot = await this.graph.getState({
       configurable: { thread_id: threadId },
     });
-    if (
-      (previousSnapshot.values as Partial<ChatState> | undefined)?.status ===
-      'awaiting_confirmation'
-    ) {
+    const locale = dto.locale || (thread.locale as 'ko' | 'ja') || 'ja';
+    const previousState = previousSnapshot.values as ChatState | undefined;
+    const cachedRequest = previousState?.recentRequests?.find(
+      (request) => request.requestId === dto.requestId,
+    );
+    const cachedResponse =
+      cachedRequest?.response ??
+      (dto.requestId && previousState?.lastRequestId === dto.requestId
+        ? previousState.lastRequestResponse
+        : null);
+    if (dto.requestId && cachedResponse) {
+      return {
+        threadId,
+        threadSecret: thread.threadSecret,
+        ...cachedResponse,
+      };
+    }
+    if (previousState?.status === 'awaiting_confirmation') {
       throw new ConflictException({
         code: 'THREAD_AWAITING_CONFIRMATION',
         message: 'Approve or reject the pending trip change before sending another message.',
       });
     }
 
-    const locale = dto.locale || (thread.locale as 'ko' | 'ja') || 'ja';
+    const structuredQuestionAnswer =
+      dto.questionId !== undefined ||
+      dto.optionId !== undefined ||
+      dto.expectedRevision !== undefined;
+    if (structuredQuestionAnswer) {
+      const currentState = previousState;
+      const pending = currentState?.pendingQuestion;
+      const selectedOption = pending?.options.find((option) => option.id === dto.optionId);
+      const isCurrentQuestion =
+        Boolean(pending) &&
+        dto.questionId === pending?.id &&
+        dto.optionId !== undefined &&
+        Boolean(selectedOption) &&
+        (dto.expectedRevision === undefined || dto.expectedRevision === pending?.revision);
+
+      if (!isCurrentQuestion) {
+        const staleMessage =
+          locale === 'ko'
+            ? '이 선택지는 이미 지난 질문에 대한 답변입니다. 현재 질문의 선택지를 다시 골라 주세요.'
+            : 'この選択肢は古い質問への回答です。現在の質問からもう一度お選びください。';
+        if (currentState) {
+          return this.mapStateToResponse(
+            threadId,
+            {
+              ...currentState,
+              status: 'completed',
+              responseMessage: staleMessage,
+              errorCode: 'STALE_QUESTION',
+            },
+            thread.threadSecret,
+          );
+        }
+        return {
+          threadId,
+          threadSecret: thread.threadSecret,
+          status: 'completed',
+          responseMessage: staleMessage,
+          errorCode: 'STALE_QUESTION',
+        };
+      }
+    }
 
     const input = {
       messages: [new HumanMessage(dto.message)],
@@ -269,6 +323,10 @@ export class ChatService implements OnModuleInit {
       relaxations: dto.relaxations ?? [],
       mealPreference: dto.mealPreference ?? null,
       mealCuisine: dto.mealCuisine ?? null,
+      structuredChoice:
+        dto.questionId && dto.optionId
+          ? { questionId: dto.questionId, optionId: dto.optionId }
+          : null,
       chatIntent: dto.chatIntent ?? null,
       // 아래 값은 한 번의 사용자 턴에만 유효하다. 이전 checkpoint 값을 명시적으로
       // 비우지 않으면 validate_input이 과거 응답을 현재 응답으로 오인한다.
@@ -283,6 +341,12 @@ export class ChatService implements OnModuleInit {
           }
         : null) as ChatState['modification'],
       createTripInput: null,
+      ...(dto.startFreshTrip
+        ? {
+            pendingQuestion: null,
+            pendingCreateTripInput: null,
+          }
+        : {}),
       // A visible form can contain a previous plan. Only apply it when this
       // request declares that it belongs to the new plan (legacy stays apply).
       formTripContext: formTripContext(dto.profilePolicy === 'ignore' ? null : dto.profile),
@@ -339,7 +403,38 @@ export class ChatService implements OnModuleInit {
       }
     }
 
-    return this.mapStateToResponse(threadId, resultState, thread.threadSecret, issuedEditToken);
+    const response = this.mapStateToResponse(
+      threadId,
+      resultState,
+      thread.threadSecret,
+      issuedEditToken,
+    );
+    if (dto.requestId) {
+      const cached = {
+        status: response.status,
+        responseMessage: response.responseMessage,
+        actionChips: response.actionChips,
+        pendingAction: response.pendingAction,
+        pendingQuestion: response.pendingQuestion,
+        alternatives: response.alternatives,
+        verifiedPlaceFacts: response.verifiedPlaceFacts,
+        resultTripId: response.resultTripId,
+        resultTrip: response.resultTrip,
+        errorCode: response.errorCode,
+      };
+      const recentRequests = [
+        ...(resultState.recentRequests ?? []).filter(
+          (request) => request.requestId !== dto.requestId,
+        ),
+        { requestId: dto.requestId, response: cached },
+      ].slice(-20);
+      await this.graph.updateState(config, {
+        lastRequestId: dto.requestId,
+        lastRequestResponse: cached,
+        recentRequests,
+      });
+    }
+    return response;
   }
 
   async cancelRun(
@@ -470,6 +565,7 @@ export class ChatService implements OnModuleInit {
       actionChips:
         state.actionChips && state.actionChips.length > 0 ? state.actionChips : undefined,
       pendingAction: state.pendingAction,
+      pendingQuestion: state.pendingQuestion,
       alternatives:
         state.alternatives && state.alternatives.length > 0 ? state.alternatives : undefined,
       verifiedPlaceFacts: state.verifiedPlaceFacts,

@@ -87,7 +87,7 @@ import type { LocalizedPlaceDescription } from '../place-details/place-descripti
 import { LogEvent, LogField } from '@logfriends/sdk';
 import { resolveSafetyRequests, safetyWarnings } from './safety-constraints';
 import { tripGenerationRecovery } from './trip-generation-recovery';
-import { completedItineraryEligibility } from './completed-itinerary-eligibility';
+import { completedItineraryPublicationValidation } from './completed-itinerary-eligibility';
 
 function matchesPlaceName(query: string, placeName: string): boolean {
   const q = query.toLowerCase().replace(/\s+/g, '');
@@ -180,6 +180,63 @@ export function completedRouteConstraintFailure(
   )
     ? null
     : 'meal_cuisine';
+}
+
+/**
+ * Final area contract gate. Candidate search providers are allowed to return
+ * nearby or Seoul-wide results, so a ranking result is never evidence that a
+ * stop belongs to the requested living area. For named areas with a known
+ * district mapping, missing or different district evidence is a hard failure.
+ * Explicit anchors are the only intentional exception (airport boundaries are
+ * removed before this stage).
+ */
+export function completedAreaConstraintFailure(
+  area: string,
+  candidates: RankedCandidate[],
+  route: RouteStopPlan[],
+): 'area_constraints' | null {
+  const expectedDistrict = seoulDistrictForArea(area);
+  if (!expectedDistrict) return null;
+  const candidateById = new Map(
+    candidates.map((candidate) => [candidate.place.placeId, candidate]),
+  );
+  const outside = route.some((stop) => {
+    const candidate = candidateById.get(stop.placeId);
+    if (!candidate || candidate.place.isAnchor) return false;
+    return candidate.place.district !== expectedDistrict;
+  });
+  return outside ? 'area_constraints' : null;
+}
+
+function placeMatchesDistrict(
+  place: Pick<Place, 'district' | 'address' | 'roadAddress'>,
+  district: string,
+): boolean {
+  return (
+    place.district === district ||
+    place.address?.includes(district) === true ||
+    place.roadAddress?.includes(district) === true
+  );
+}
+
+function providerUnavailableFailure(
+  dayNumber: number,
+  area: string,
+  provider: string,
+  operation: string,
+): UnprocessableEntityException {
+  return new UnprocessableEntityException({
+    code: 'PLACE_PROVIDER_UNAVAILABLE',
+    message: `Day ${dayNumber} (${area}) 외부 ${operation} 제공자를 사용할 수 없어 일정을 공개하지 않았습니다.`,
+    recovery: tripGenerationRecovery({
+      reason: 'provider_unavailable',
+      dayNumber,
+      area,
+      stage: 'candidate',
+      affectedRequirement: 'candidate',
+      diagnostics: { provider, operation },
+    }),
+  });
 }
 
 function providerBackedTravelMinutes(routes: Array<RouteLegEstimate | null>): number {
@@ -357,7 +414,11 @@ export class TripsService {
   ): Promise<TripApiResponse> {
     const parsed = await this.preferences.parse(dto);
     const relaxations = new Set(dto.relaxations ?? []);
-    const area = parsed.preference.area ?? dto.startArea;
+    const explicitlyRequestedArea = dto.startArea?.trim() || null;
+    // A classifier/parser may carry an inferred day area alongside the user's
+    // explicit `startArea`. For a single-day request the explicit value is the
+    // immutable contract and must win before any candidate search starts.
+    const area = dto.startArea?.trim() || parsed.preference.area || dto.startArea;
     if (!area) {
       throw new BadRequestException({
         code: 'AREA_REQUIRED',
@@ -365,7 +426,7 @@ export class TripsService {
       });
     }
     const travelDate = this.resolveTravelDate(dto.travelDate, dto.text);
-    const tripDays =
+    const parsedTripDays =
       parsed.preference.days && parsed.preference.days.length > 0
         ? parsed.preference.days
         : [
@@ -389,6 +450,20 @@ export class TripsService {
               anchorPlace: parsed.preference.anchorPlace,
             },
           ];
+    const tripDays =
+      dto.startArea?.trim() && parsedTripDays.length === 1
+        ? parsedTripDays.map((day) => ({ ...day, area: dto.startArea!.trim() }))
+        : parsedTripDays;
+    // Keep an immutable copy of the parsed contract. All later candidate and
+    // route work must be checked against this snapshot, not against a value
+    // that a provider, optimizer, or recovery branch may have changed.
+    const originalDayContracts = tripDays.map((day) => ({
+      dayNumber: day.dayNumber,
+      date: day.date ?? travelDate,
+      area: day.area ?? area,
+      startTime: day.startTime,
+      endTime: day.endTime,
+    }));
 
     const editToken = incomingEditToken || randomUUID();
     const trip = await this.trips.save(
@@ -451,6 +526,10 @@ export class TripsService {
       const allCrowds: CrowdObservation[] = [];
       const routeWarnings: string[] = [];
       const visitedPlaceIds = new Set<string>();
+      const areaVerificationByDay = new Map<
+        number,
+        { valid: boolean; outsidePlaceIds: string[] }
+      >();
 
       for (const day of tripDays) {
         const dayArea = day.area ?? area;
@@ -478,17 +557,38 @@ export class TripsService {
 
         const queries = this.queryGenerator.generate(dayPreference, Math.max(day.dayNumber - 1, 0));
         const nearestCrowdArea = await this.spatialAreas.nearestCrowdArea(dayArea);
-        const [placeResponses, crowd, ktoCandidates] = await Promise.all([
-          Promise.all(
-            queries.map((query) => this.placeProvider.search({ query, area: dayArea, limit: 15 })),
-          ),
-          this.crowdProvider.getAreaCrowd(nearestCrowdArea?.areaName ?? dayArea),
-          this.candidateSearch.searchKtoCandidates({
+        const placeResponsesPromise = Promise.all(
+          queries.map((query) => this.placeProvider.search({ query, area: dayArea, limit: 15 })),
+        ).catch(() => {
+          throw providerUnavailableFailure(
+            day.dayNumber,
+            dayArea,
+            this.placeProvider.name,
+            '장소 검색',
+          );
+        });
+        const crowdPromise = this.crowdProvider
+          .getAreaCrowd(nearestCrowdArea?.areaName ?? dayArea)
+          .catch(() => {
+            routeWarnings.push(
+              `Day ${day.dayNumber}: ${this.crowdProvider.name} 혼잡도 제공자를 사용할 수 없어 혼잡도 없이 계속 계산했습니다.`,
+            );
+            return null;
+          });
+        const ktoCandidatesPromise = this.candidateSearch
+          .searchKtoCandidates({
             area: dayArea,
             interests: day.interests,
             radiusMeters: searchRadiusMeters,
             limit: 40,
-          }),
+          })
+          .catch(() => {
+            throw providerUnavailableFailure(day.dayNumber, dayArea, 'kto', '관광 후보 검색');
+          });
+        const [placeResponses, crowd, ktoCandidates] = await Promise.all([
+          placeResponsesPromise,
+          crowdPromise,
+          ktoCandidatesPromise,
         ]);
 
         const records = placeResponses
@@ -527,11 +627,36 @@ export class TripsService {
             );
           }),
         );
-        const spatialFilter = await this.spatialAreas.filterPlaces(
+        // Apply the same spatial contract to both provider streams. Previously
+        // KTO candidates bypassed this filter entirely, which could make an
+        // out-of-area place win even when Naver candidates were filtered.
+        const spatialInput = [...persistedPlaces, ...ktoCandidates];
+        let spatialFilter = await this.spatialAreas.filterPlaces(
           dayArea,
-          persistedPlaces,
+          spatialInput,
           searchRadiusMeters,
         );
+        if (spatialFilter.applied && spatialFilter.expanded && !relaxations.has('search_radius')) {
+          // The spatial service may expand a sparse boundary for discovery. An
+          // explicit user area is still hard, so re-run with zero expansion
+          // before ranking; only the user's search-radius recovery may keep
+          // nearby candidates.
+          spatialFilter = await this.spatialAreas.filterPlaces(dayArea, spatialInput, 0, 0);
+        }
+        let areaScopedPlaces = spatialFilter.places;
+        if (!spatialFilter.applied) {
+          // A missing spatial boundary must never degrade to all-Seoul results.
+          // Use the configured district mapping as a conservative fallback for
+          // known living areas; unknown areas require a user decision.
+          const fallbackDistrict = seoulDistrictForArea(dayArea);
+          areaScopedPlaces = fallbackDistrict
+            ? spatialInput.filter((place) => placeMatchesDistrict(place, fallbackDistrict))
+            : [];
+        }
+        areaVerificationByDay.set(day.dayNumber, {
+          valid: spatialFilter.applied || seoulDistrictForArea(dayArea) !== null,
+          outsidePlaceIds: [],
+        });
         const crowdWithReference =
           crowd && nearestCrowdArea
             ? {
@@ -658,8 +783,7 @@ export class TripsService {
         }
 
         const deduplicated = this.deduplicator.deduplicate([
-          ...ktoCandidates,
-          ...spatialFilter.places,
+          ...areaScopedPlaces,
           ...anchorEntities,
         ]);
 
@@ -722,6 +846,29 @@ export class TripsService {
           }
         }
 
+        if (
+          !spatialFilter.applied &&
+          areaScopedPlaces.length === 0 &&
+          anchorEntities.length === 0
+        ) {
+          throw new UnprocessableEntityException({
+            code: 'AREA_FILTER_UNAVAILABLE',
+            message: `Day ${day.dayNumber} (${dayArea})의 허용 지역 경계를 확인하지 못해 서울 전체 후보를 사용하지 않았습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+              stage: 'area',
+              affectedRequirement: 'area',
+              diagnostics: {
+                fetched: spatialInput.length,
+                unique: new Set(spatialInput.map((place) => place.id)).size,
+                insideAllowedArea: 0,
+              },
+            }),
+          });
+        }
+
         if (candidates.length === 0) {
           throw new UnprocessableEntityException({
             code: 'NO_FEASIBLE_ROUTE',
@@ -730,6 +877,9 @@ export class TripsService {
               reason: 'no_candidates',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'candidate',
+              affectedRequirement: 'candidate',
+              diagnostics: { fetched: candidates.length, unique: candidates.length },
             }),
           });
         }
@@ -757,6 +907,8 @@ export class TripsService {
               reason: 'no_candidates',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'candidate',
+              affectedRequirement: 'candidate',
             }),
           });
         }
@@ -779,6 +931,13 @@ export class TripsService {
               reason: 'no_candidates',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'role',
+              affectedRequirement: 'role',
+              diagnostics: {
+                fetched: uniqueDayCandidates.length,
+                eligible: categoryMatchedCandidates.length,
+                excludedByRole: uniqueDayCandidates.length,
+              },
             }),
           });
         }
@@ -816,6 +975,13 @@ export class TripsService {
                 reason: 'meal_cuisine_unavailable',
                 dayNumber: day.dayNumber,
                 area: dayArea,
+                stage: 'role',
+                affectedRequirement: 'meal',
+                diagnostics: {
+                  fetched: ranking.candidates.length,
+                  eligible: cuisineFilter.matchedRestaurantCount,
+                  excludedByRole: cuisineFilter.excludedRestaurantCount,
+                },
               }),
             });
           }
@@ -875,6 +1041,8 @@ export class TripsService {
               reason: 'route_constraints_infeasible',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'route',
+              affectedRequirement: 'route',
             }),
           });
         }
@@ -969,14 +1137,46 @@ export class TripsService {
                 reason: 'route_constraints_infeasible',
                 dayNumber: day.dayNumber,
                 area: dayArea,
+                stage: 'route',
+                affectedRequirement: 'route',
               }),
             });
           }
           route = measuredRoute;
         }
 
+        const originalDay = originalDayContracts.find((item) => item.dayNumber === day.dayNumber);
+        const finalContractInput = {
+          ...routeInput,
+          // Re-read the immutable request contract at the publication gate.
+          // A normal 13:00 arrival and 14:00 departure remains valid; the
+          // validator checks the interval, not the departure as a start time.
+          travelDate: originalDay?.date ?? routeInput.travelDate,
+          startTime: originalDay?.startTime ?? routeInput.startTime,
+          endTime: originalDay?.endTime ?? routeInput.endTime,
+          candidates: routeCandidates,
+        };
+        if (
+          explicitlyRequestedArea !== null &&
+          originalDay?.area === dayArea &&
+          spatialFilter.expanded &&
+          !relaxations.has('search_radius') &&
+          completedAreaConstraintFailure(dayArea, routeCandidates, route) === 'area_constraints'
+        ) {
+          throw new UnprocessableEntityException({
+            code: 'AREA_CONSTRAINTS_VIOLATED',
+            message: `Day ${day.dayNumber} (${dayArea}) 일정에 지정 지역 밖의 장소가 포함되어 공개하지 않았습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+              stage: 'area',
+              affectedRequirement: 'area',
+            }),
+          });
+        }
         const completedConstraintFailure = completedRouteConstraintFailure(
-          { ...routeInput, candidates: routeCandidates },
+          finalContractInput,
           route,
           !relaxations.has('meal_cuisine'),
           providerBackedTravelMinutes(legEvidence.routes),
@@ -989,6 +1189,8 @@ export class TripsService {
               reason: 'meal_cuisine_unavailable',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'role',
+              affectedRequirement: 'meal',
             }),
           });
         }
@@ -1000,6 +1202,8 @@ export class TripsService {
               reason: 'route_constraints_infeasible',
               dayNumber: day.dayNumber,
               area: dayArea,
+              stage: 'route',
+              affectedRequirement: 'route',
             }),
           });
         }
@@ -1037,6 +1241,8 @@ export class TripsService {
                 reason: 'no_candidates',
                 dayNumber: day.dayNumber,
                 area: dayArea,
+                stage: 'role',
+                affectedRequirement: 'meal',
               }),
             });
           }
@@ -1131,7 +1337,7 @@ export class TripsService {
         const requestedThemes = [...day.interests, ...day.preferences].filter(
           (value) => !/^(여행|관광|맛집|グルメ|旅行)$/iu.test(value.trim()),
         );
-        const eligibility = completedItineraryEligibility({
+        const publicationValidation = completedItineraryPublicationValidation({
           startTime: day.startTime,
           endTime: day.endTime,
           requestedMeal: (day.mealWindows?.length ?? 0) > 0,
@@ -1147,11 +1353,36 @@ export class TripsService {
               inboundRoute: stop.inboundRoute,
             };
           }),
+          area: areaVerificationByDay.get(day.dayNumber) ?? { valid: false },
+          // RouteConstraintValidator and completedRouteConstraintFailure have
+          // already passed for every stop at this publication boundary. The
+          // coverage gate below remains part of the structured time result.
+          time: { valid: true },
         });
-        if (!eligibility.eligible) {
+        if (publicationValidation.publicationStatus !== 'ready') {
+          const failureCode = publicationValidation.failureCodes[0] ?? 'ROUTE_CONSTRAINTS_VIOLATED';
           throw new UnprocessableEntityException({
-            code: eligibility.code,
+            code: failureCode,
             message: 'The generated itinerary does not satisfy the completed-result evidence gate.',
+            validation: publicationValidation,
+            recovery: tripGenerationRecovery({
+              reason:
+                failureCode === 'ROUTE_CONSTRAINTS_VIOLATED' ||
+                failureCode === 'INSUFFICIENT_VERIFIED_COVERAGE'
+                  ? 'route_constraints_infeasible'
+                  : 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: day.area ?? area,
+              stage:
+                failureCode === 'ROUTE_CONSTRAINTS_VIOLATED' ||
+                failureCode === 'INSUFFICIENT_VERIFIED_COVERAGE'
+                  ? 'route'
+                  : 'role',
+              affectedRequirement:
+                failureCode === 'THEME_EVIDENCE_MISSING'
+                  ? 'theme'
+                  : (publicationValidation.requiredActivities.missing[0] ?? 'route'),
+            }),
           });
         }
       }

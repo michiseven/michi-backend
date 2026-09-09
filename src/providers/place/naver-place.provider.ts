@@ -64,13 +64,26 @@ export class NaverPlaceProvider implements PlaceProvider {
       });
     }
 
+    const places = payload.items
+      .map((item) => normalizeNaverLocalItem(item))
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const unique = new Set(places.map((place) => place.sourcePlaceId)).size;
     const result: PlaceSearchResponse = {
       provider: this.name,
       providerMode: this.mode,
       query,
-      places: payload.items
-        .map((item) => normalizeNaverLocalItem(item))
-        .filter((item) => item !== null),
+      places,
+      diagnostics: {
+        fetched: payload.items.length,
+        unique,
+        filteredOut: Math.max(payload.items.length - unique, 0),
+        status:
+          payload.items.length === 0
+            ? 'empty_response'
+            : places.length === 0
+              ? 'filtered_out'
+              : 'ok',
+      },
     };
     this.cache.set(cacheKey, result, this.config.getOrThrow<number>('PROVIDER_CACHE_TTL_SECONDS'));
     return result;

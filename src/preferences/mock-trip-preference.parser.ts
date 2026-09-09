@@ -159,6 +159,14 @@ function includesAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
 }
 
+function hasStrollRequest(text: string): boolean {
+  if (!includesAny(text, ['산책', '散歩']) && !/\bstroll\b/iu.test(text)) return false;
+  // A negative walking statement is a mobility constraint, not a required activity.
+  return !/(산책|散歩|stroll)[^.!?。！？]{0,12}(?:싫|안\s*좋|좋아하지|좋지\s*않|したくない|好きじゃない|好きではない|嫌|苦手|dislike|hate|don't\s+(?:like|want))/iu.test(
+    text,
+  );
+}
+
 function budgetFromText(text: string): number | null {
   const manwonMatch = text.match(/(\d+)\s*만\s*원/);
   if (manwonMatch?.[1]) {
@@ -258,7 +266,9 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
         ? ['meat', 'food']
         : []),
       // A generic walk is a mobility/activity preference, not a promise that
-      // the route contains a park. Explicit park/place names remain themes.
+      // the route contains a park. It is a separate required activity role.
+      ...(hasStrollRequest(input.text) ? ['stroll'] : []),
+      // Explicit park/place names remain the stricter park theme.
       ...(includesAny(input.text, ['公園', '공원', '서울숲']) ? ['park'] : []),
       ...(includesAny(input.text, [
         '博物館',
@@ -568,6 +578,8 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
           ])
         )
           dayInterests.push('culture');
+        if (hasStrollRequest(dayChunk)) dayInterests.push('stroll');
+        if (includesAny(dayChunk, ['公園', '공원', '서울숲'])) dayInterests.push('park');
         if (
           includesAny(dayChunk, ['セレクトショップ', '쇼핑', '편집샵', '편집숍', '문구', '브랜드'])
         ) {

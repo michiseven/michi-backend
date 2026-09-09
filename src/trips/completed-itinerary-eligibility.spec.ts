@@ -1,4 +1,5 @@
 import {
+  completedItineraryPublicationValidation,
   completedItineraryEligibility,
   type CompletionEligibilityInput,
 } from './completed-itinerary-eligibility';
@@ -71,7 +72,7 @@ describe('completedItineraryEligibility', () => {
     ).toEqual({ eligible: true });
   });
 
-  it('does not treat a generic Hongdae walk as a required park, but keeps explicit place themes hard', () => {
+  it('does not treat a generic Hongdae walk as a stroll place, while keeping explicit themes hard', () => {
     const hongdaeLunchAndCafe = [
       stop({
         type: 'meal',
@@ -91,17 +92,17 @@ describe('completedItineraryEligibility', () => {
     ];
     expect(
       completedItineraryEligibility({
-        startTime: '13:00',
-        endTime: '18:00',
+        startTime: '10:00',
+        endTime: '11:00',
         requestedMeal: true,
         requestedThemes: ['cafe', '산책'],
         stops: hongdaeLunchAndCafe,
       }),
-    ).toEqual({ eligible: true });
+    ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
     expect(
       completedItineraryEligibility({
-        startTime: '13:00',
-        endTime: '18:00',
+        startTime: '10:00',
+        endTime: '11:00',
         requestedMeal: true,
         requestedThemes: ['공원'],
         stops: hongdaeLunchAndCafe,
@@ -109,12 +110,77 @@ describe('completedItineraryEligibility', () => {
     ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
     expect(
       completedItineraryEligibility({
-        startTime: '13:00',
-        endTime: '18:00',
+        startTime: '10:00',
+        endTime: '11:00',
         requestedMeal: true,
         requestedThemes: ['한옥'],
         stops: hongdaeLunchAndCafe,
       }),
     ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
+  });
+
+  it('requires a stroll place and accepts park or stroll categories for that role', () => {
+    expect(
+      completedItineraryEligibility({
+        startTime: '10:00',
+        endTime: '11:00',
+        requestedMeal: false,
+        requestedThemes: ['stroll'],
+        stops: [stop({ name: '홍대 카페', category: 'cafe' })],
+      }),
+    ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
+    expect(
+      completedItineraryEligibility({
+        startTime: '10:00',
+        endTime: '11:00',
+        requestedMeal: false,
+        requestedThemes: ['stroll'],
+        stops: [stop({ name: '한강 산책로', category: 'stroll' })],
+      }),
+    ).toEqual({ eligible: true });
+    expect(
+      completedItineraryEligibility({
+        startTime: '10:00',
+        endTime: '11:00',
+        requestedMeal: false,
+        requestedThemes: ['stroll'],
+        stops: [stop({ name: '서울숲', category: 'park' })],
+      }),
+    ).toEqual({ eligible: true });
+  });
+
+  it('returns a blocked publication contract with required activity and area/time checks', () => {
+    const validation = completedItineraryPublicationValidation({
+      startTime: '13:00',
+      endTime: '14:00',
+      requestedMeal: true,
+      requestedThemes: ['산책'],
+      stops: [stop({ category: 'restaurant', type: 'meal' })],
+      area: { valid: false, outsidePlaceIds: ['outside-1'] },
+      time: { valid: true },
+    });
+
+    expect(validation).toEqual({
+      publicationStatus: 'blocked',
+      requiredActivities: { status: 'fail', missing: ['산책'] },
+      area: { status: 'fail', outsidePlaceIds: ['outside-1'] },
+      time: { status: 'pass', violations: [] },
+      failureCodes: ['THEME_EVIDENCE_MISSING', 'AREA_CONSTRAINTS_VIOLATED'],
+    });
+  });
+
+  it('keeps a normal 13:00–14:00 stay publication-ready when hard checks pass', () => {
+    const validation = completedItineraryPublicationValidation({
+      startTime: '13:00',
+      endTime: '14:00',
+      requestedMeal: false,
+      requestedThemes: [],
+      stops: [stop({ category: 'restaurant', stay: 60 })],
+      area: { valid: true },
+      time: { valid: true },
+    });
+
+    expect(validation.publicationStatus).toBe('ready');
+    expect(validation.time).toEqual({ status: 'pass', violations: [] });
   });
 });

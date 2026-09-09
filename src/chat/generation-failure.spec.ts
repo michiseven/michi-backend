@@ -63,4 +63,62 @@ describe('generationFailure', () => {
       expect(chip.requestPatch).toBeDefined();
     }
   });
+
+  it('exposes the structured area stage and only a user-edit recovery', () => {
+    const failure = generationFailure(
+      new UnprocessableEntityException({
+        code: 'AREA_FILTER_UNAVAILABLE',
+        recovery: {
+          reason: 'no_candidates',
+          dayNumber: 1,
+          area: '홍대',
+          stage: 'area',
+          affectedRequirement: 'area',
+          diagnostics: { fetched: 4, unique: 4, insideAllowedArea: 0 },
+          actions: [],
+        },
+        validation: {
+          publicationStatus: 'blocked',
+          requiredActivities: { status: 'pass', missing: [] },
+          area: { status: 'fail', outsidePlaceIds: ['outside-1'] },
+          time: { status: 'pass', violations: [] },
+          failureCodes: ['AREA_CONSTRAINTS_VIOLATED'],
+        },
+      }),
+      'ko',
+    );
+
+    expect(failure.code).toBe('AREA_FILTER_UNAVAILABLE');
+    expect(failure.stage).toBe('area');
+    expect(failure.diagnostics).toEqual({ fetched: 4, unique: 4, insideAllowedArea: 0 });
+    expect(failure.validation?.publicationStatus).toBe('blocked');
+    expect(failure.chips).toEqual([
+      expect.objectContaining({ requiresUserEdit: true, label: '지역을 직접 수정하기' }),
+    ]);
+  });
+
+  it('distinguishes a provider outage from candidate or route constraints', () => {
+    const failure = generationFailure(
+      new UnprocessableEntityException({
+        code: 'PLACE_PROVIDER_UNAVAILABLE',
+        recovery: {
+          reason: 'provider_unavailable',
+          dayNumber: 1,
+          area: '홍대',
+          stage: 'candidate',
+          affectedRequirement: 'candidate',
+          diagnostics: { provider: 'naver-local', operation: '장소 검색' },
+          actions: [],
+        },
+      }),
+      'ja',
+    );
+
+    expect(failure.code).toBe('PLACE_PROVIDER_UNAVAILABLE');
+    expect(failure.stage).toBe('candidate');
+    expect(failure.diagnostics?.provider).toBe('naver-local');
+    expect(failure.chips).toEqual([
+      expect.objectContaining({ label: '同じ条件で再試行', type: 'refine' }),
+    ]);
+  });
 });

@@ -22,11 +22,22 @@ export interface ProviderPlaceRecord {
   rawPayload: Record<string, unknown>;
 }
 
+export type PlaceSearchResponseStatus = 'ok' | 'empty_response' | 'filtered_out';
+
+/** Provider-level counts before area/category eligibility is applied. */
+export interface PlaceSearchResponseDiagnostics {
+  fetched: number;
+  unique: number;
+  filteredOut: number;
+  status: PlaceSearchResponseStatus;
+}
+
 export interface PlaceSearchResponse {
   provider: string;
   providerMode: ProviderMode;
   query: string;
   places: ProviderPlaceRecord[];
+  diagnostics?: PlaceSearchResponseDiagnostics;
 }
 
 export interface PlaceProvider {

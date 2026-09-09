@@ -30,6 +30,151 @@ export interface ClassifiedIntent {
   };
 }
 
+/**
+ * Extract only a region the user explicitly wrote. This is deliberately
+ * narrower than the preference parser's inferred area: an LLM may suggest a
+ * nearby area, but it must not replace a region stated by the user.
+ */
+export function extractExplicitSeoulArea(message: string): string | undefined {
+  const aliases = [
+    ['성수동', '성수'],
+    ['弘大', '홍대'],
+    ['홍익대', '홍대'],
+    ['聖水', '성수'],
+    ['江南', '강남'],
+    ['明洞', '명동'],
+    ['梨泰院', '이태원'],
+    ['鍾路', '종로'],
+    ['鐘路', '종로'],
+    ['東大門', '동대문'],
+    ['蚕室', '잠실'],
+    ['北村', '북촌'],
+    ['梨大', '이대'],
+    ['延南', '연남'],
+    ['益善洞', '익선동'],
+    ['汝矣島', '여의도'],
+    ['ソウルの森', '서울숲'],
+    ['孔徳', '공덕'],
+    ['공덕동', '공덕'],
+    ['麻浦', '마포'],
+    ['마포구', '마포'],
+    ['漢南', '한남'],
+    ['한남동', '한남'],
+    ['乙支路', '을지로'],
+    ['城北', '성북'],
+    ['성북동', '성북'],
+    ['三清洞', '삼청동'],
+    ['삼청', '삼청동'],
+    ['西村', '서촌'],
+    ['文来', '문래'],
+    ['문래동', '문래'],
+    ['望遠', '망원'],
+    ['망원동', '망원'],
+    ['仁寺洞', '인사동'],
+    ['カロスキル', '가로수길'],
+    ['狎鴎亭洞', '압구정'],
+    ['狎鴎亭', '압구정'],
+    ['清潭洞', '청담'],
+    ['清潭', '청담'],
+    ['성수', '성수'],
+    ['명동', '명동'],
+    ['홍대', '홍대'],
+    ['강남', '강남'],
+    ['을지로', '을지로'],
+    ['동대문', '동대문'],
+    ['잠실', '잠실'],
+    ['여의도', '여의도'],
+    ['안국', '안국'],
+    ['서촌', '서촌'],
+    ['북촌', '북촌'],
+    ['이태원', '이태원'],
+    ['한남', '한남'],
+  ] as const;
+  const ordered = [...aliases].sort((left, right) => right[0].length - left[0].length);
+  const hits = ordered
+    .map(([value, area]) => ({ value, area, index: message.indexOf(value) }))
+    .filter((hit) => hit.index >= 0)
+    .sort((left, right) => left.index - right.index || right.value.length - left.value.length)
+    .filter((hit, index, all) => index === 0 || hit.index !== all[index - 1]!.index);
+  if (hits.length === 0) return undefined;
+
+  const activeHits = hits.filter((hit) => {
+    const hitIndex = hits.indexOf(hit);
+    const nextHit = hits[hitIndex + 1];
+    const between = message.slice(hit.index + hit.value.length, nextHit?.index ?? message.length);
+    return !/(?:말고|아니라|대신|ではなく|じゃなく)/u.test(between);
+  });
+  const positiveHits = activeHits.filter((hit) => {
+    const after = message.slice(hit.index + hit.value.length);
+    return /^\s*(?:에서|으로|로|에|의|で|に)/u.test(after);
+  });
+
+  // Prefer the area attached to a location particle ("홍대에서"), ignore an
+  // explicitly rejected alternative ("성수 말고"), and refuse to invent a
+  // winner when multiple areas remain genuinely ambiguous.
+  if (positiveHits.length > 0) return positiveHits[positiveHits.length - 1]!.area;
+  if (activeHits.length === 1) return activeHits[0]!.area;
+  return undefined;
+}
+
+/** Structured meal choices and their natural-language equivalents converge to
+ * the same state transition in the chat node. */
+export function extractMealCuisine(
+  message: string,
+): 'korean' | 'japanese' | 'chinese' | 'western' | 'cafe_dessert' | undefined {
+  if (/한식|한국料理|韓国料理|韓国食|korean/iu.test(message)) return 'korean';
+  if (/일식|日本料理|和食|japanese/iu.test(message)) return 'japanese';
+  if (/중식|中華料理|chinese/iu.test(message)) return 'chinese';
+  if (/양식|洋食|western/iu.test(message)) return 'western';
+  if (
+    /카페\s*[·ㆍ&와과및]?\s*디저트|카페와\s*디저트|カフェ.*スイーツ|cafe.*dessert/iu.test(message)
+  ) {
+    return 'cafe_dessert';
+  }
+  return undefined;
+}
+
+export function delegatesMealChoice(message: string): boolean {
+  return /아무거나|상관없|네가\s*(골라|추천)|추천해\s*줘|지역.*(유명|대표|특색)|로컬.*(메뉴|맛집)|おまかせ|任せ|名物|人気.*(料理|グルメ)/iu.test(
+    message,
+  );
+}
+
+function toClock(hour: string, minute?: string, afternoon = false): string | undefined {
+  const parsedHour = Number(hour);
+  const parsedMinute = minute ? Number(minute) : 0;
+  if (!Number.isInteger(parsedHour) || parsedHour < 0 || parsedHour > 23) return undefined;
+  if (!Number.isInteger(parsedMinute) || parsedMinute < 0 || parsedMinute > 59) return undefined;
+  const normalizedHour = afternoon && parsedHour < 12 ? parsedHour + 12 : parsedHour;
+  if (normalizedHour > 23) return undefined;
+  return `${String(normalizedHour).padStart(2, '0')}:${String(parsedMinute).padStart(2, '0')}`;
+}
+
+/** Extract only an explicit follow-up time window; omitted values stay intact. */
+export function extractExplicitTimeWindow(message: string): {
+  startTime?: string;
+  endTime?: string;
+} {
+  const afternoon = /오후|午後|pm/i.test(message);
+  const range = message.match(
+    /(\d{1,2})(?::(\d{2}))?\s*(?:시|時)?\s*(?:부터|から|~|～|-|–)\s*(\d{1,2})(?::(\d{2}))?\s*(?:시|時)?/u,
+  );
+  if (range) {
+    return {
+      startTime: toClock(range[1]!, range[2], afternoon),
+      endTime: toClock(range[3]!, range[4], afternoon),
+    };
+  }
+
+  const endOnly = message.match(
+    /(?:오후|午後)?\s*(\d{1,2})(?::(\d{2}))?\s*(?:시|時)?\s*(?:까지|まで)/u,
+  );
+  if (endOnly) {
+    return { endTime: toClock(endOnly[1]!, endOnly[2], afternoon) };
+  }
+  return {};
+}
+
 export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean): ClassifiedIntent {
   const trimmed = message.trim();
 
@@ -139,27 +284,33 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
     );
 
   if (isCreate) {
-    const areaMatch = trimmed.match(
-      /성수|명동|홍대|강남|을지로|동대문|잠실|여의도|안국|서촌|북촌|이태원|한남|聖水|明洞|弘大|江南|乙支路/,
-    );
+    const explicitArea = extractExplicitSeoulArea(trimmed);
     const budgetMatch = trimmed.match(/(\d+)\s*만\s*원/);
     const budget = budgetMatch ? parseInt(budgetMatch[1]!, 10) * 10000 : undefined;
-    // The deterministic fallback mirrors the Japanese first-visitor flow.
-    // Korean requests keep their established direct-create behavior when the LLM is unavailable.
+    // Keep an omitted area omitted. The preference parser owns product
+    // defaults; chat classification must not silently turn it into 성수.
     const needsMealChoice = /ランチ|昼食|夕食|グルメ|食べ/iu.test(trimmed);
     const hasCuisine =
       /한식|일식|중식|양식|고기|韓国料理|日本料理|中華料理|洋食|焼肉|korean|japanese|chinese|western/iu.test(
         trimmed,
       );
     if (needsMealChoice && !hasCuisine) {
-      return { intent: 'clarify', clarificationKind: 'meal' };
+      return {
+        intent: 'clarify',
+        clarificationKind: 'meal',
+        createTripInput: {
+          text: trimmed,
+          startArea: explicitArea,
+          budget,
+        },
+      };
     }
 
     return {
       intent: 'create_trip',
       createTripInput: {
         text: trimmed,
-        startArea: areaMatch ? areaMatch[0] : '성수',
+        startArea: explicitArea,
         budget,
       },
     };

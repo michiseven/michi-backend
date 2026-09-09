@@ -26,6 +26,7 @@ import {
   placeAlternatives,
   routeLegOverrides,
   completedRouteConstraintFailure,
+  completedAreaConstraintFailure,
   TripsService,
 } from './trips.service';
 import { DistanceBasedRoutingProvider } from '../routing/distance-based-routing.provider';
@@ -220,6 +221,111 @@ describe('completedRouteConstraintFailure', () => {
     ];
 
     expect(completedRouteConstraintFailure(input, route, false)).toBe('route_constraints');
+  });
+
+  it('accepts a normal 13:00 arrival followed by a 14:00 departure', () => {
+    const candidate = restaurantCandidate('홍대 한식당', '음식점>한식>비빔밥');
+    const input: OptimizeRouteInput = {
+      travelDate: '2026-09-09',
+      startTime: '13:00',
+      endTime: '14:00',
+      budget: null,
+      candidates: [candidate],
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T04:00:00.000Z',
+        leaveAt: '2026-09-09T05:00:00.000Z',
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+        stopType: 'meal',
+      },
+    ];
+
+    expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
+  });
+});
+
+describe('completedAreaConstraintFailure', () => {
+  const scoreBreakdown = {
+    total: 1,
+    preference: 1,
+    crowd: 1,
+    distance: 1,
+    time: 1,
+    budget: 1,
+    diversity: 1,
+    area: 1,
+  };
+
+  function restaurantCandidate(name: string, rawCategory: string): RankedCandidate {
+    return {
+      place: {
+        placeId: 'restaurant-area-1',
+        source: 'naver',
+        sourcePlaceId: 'restaurant-area-1',
+        name,
+        category: 'restaurant',
+        address: '서울 마포구',
+        roadAddress: null,
+        location: { type: 'Point', coordinates: [126.92, 37.56] },
+        district: '마포구',
+        rawCategory,
+        rawPayload: {},
+      },
+      estimatedCost: null,
+      estimatedStayMinutes: 60,
+      reason: 'fixture',
+      scoreBreakdown,
+    };
+  }
+
+  it('rejects a final Hongdae itinerary that contains a Seodaemun place', () => {
+    const candidate = {
+      ...restaurantCandidate('신촌 한식당', '음식점>한식>비빔밥'),
+      place: {
+        ...restaurantCandidate('신촌 한식당', '음식점>한식>비빔밥').place,
+        district: '서대문구',
+      },
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T04:00:00.000Z',
+        leaveAt: '2026-09-09T05:00:00.000Z',
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+      },
+    ];
+
+    expect(completedAreaConstraintFailure('홍대', [candidate], route)).toBe('area_constraints');
+  });
+
+  it('accepts a mapped district candidate and leaves unknown living areas to spatial evidence', () => {
+    const candidate = restaurantCandidate('홍대 한식당', '음식점>한식>비빔밥');
+    candidate.place.district = '마포구';
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T04:00:00.000Z',
+        leaveAt: '2026-09-09T05:00:00.000Z',
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+      },
+    ];
+
+    expect(completedAreaConstraintFailure('홍대', [candidate], route)).toBeNull();
+    expect(completedAreaConstraintFailure('낯선 생활권', [candidate], route)).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@ const INTEREST_CATEGORIES: Readonly<Record<string, string>> = {
   meat: 'restaurant',
   food: 'restaurant',
   park: 'park',
+  stroll: 'park',
   culture: 'culture',
 };
 

@@ -1,4 +1,9 @@
-import type { PendingTripMutation, ReplacementCandidate, VerifiedPlaceFacts } from '../chat-state';
+import type {
+  PendingChatQuestion,
+  PendingTripMutation,
+  ReplacementCandidate,
+  VerifiedPlaceFacts,
+} from '../chat-state';
 import type { TripDto } from '../../trips/trip-response';
 import type { TripRelaxation } from '../../trips/trip-generation-recovery';
 import type { MealCuisine } from '../../preferences/preference.types';
@@ -9,6 +14,8 @@ export interface ActionChipDto {
   label: string;
   query: string;
   type?: string;
+  questionId?: string;
+  optionId?: string;
   mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
   mealPreference?: 'local_specialty';
   mealCuisine?: MealCuisine;
@@ -34,6 +41,7 @@ export interface ChatResponseDto {
   responseMessage: string;
   actionChips?: ActionChipDto[];
   pendingAction?: PendingTripMutation | null;
+  pendingQuestion?: PendingChatQuestion | null;
   alternatives?: ReplacementCandidate[];
   verifiedPlaceFacts?: VerifiedPlaceFacts | null;
   resultTripId?: string | null;

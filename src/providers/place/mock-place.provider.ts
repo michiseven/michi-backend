@@ -227,6 +227,7 @@ export class MockPlaceProvider implements PlaceProvider {
       return terms.some((term) => searchable.includes(term));
     });
     const places = (matching.length > 0 ? matching : FIXTURES).slice(0, request.limit ?? 5);
+    const fetched = places.length;
     return Promise.resolve({
       provider: this.name,
       providerMode: this.mode,
@@ -235,6 +236,12 @@ export class MockPlaceProvider implements PlaceProvider {
         ...place,
         rawPayload: { ...place.rawPayload },
       })),
+      diagnostics: {
+        fetched,
+        unique: new Set(places.map((place) => place.sourcePlaceId)).size,
+        filteredOut: 0,
+        status: fetched === 0 ? 'empty_response' : 'ok',
+      },
     });
   }
 }

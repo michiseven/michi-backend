@@ -9,6 +9,7 @@ const SEARCH_TERMS: Record<string, string> = {
   food: '맛집',
   restaurant: '맛집',
   park: '공원',
+  stroll: '공원',
   culture: '전시',
   night_view: '야경 명소',
   photography: '사진 명소',
@@ -27,37 +28,72 @@ const SEARCH_TERM_VARIANTS: Readonly<Record<string, readonly string[]>> = {
   food: ['맛집', '한식 맛집', '로컬 맛집'],
   restaurant: ['맛집', '한식 맛집', '로컬 맛집'],
   park: ['공원', '산책 명소', '정원'],
+  // Keep a generic stroll distinct from the explicit park role while searching
+  // the park/trail/waterfront/garden vocabulary that can satisfy it.
+  stroll: ['공원', '산책로', '하천변', '정원'],
   culture: ['전시', '미술관', '박물관'],
   attraction: ['관광 명소', '역사 명소', '문화 명소'],
   sightseeing: ['관광 명소', '역사 명소', '문화 명소'],
   leisure: ['놀거리', '체험', '문화 체험'],
 };
 
+export interface RoleSearchQuery {
+  role: string;
+  query: string;
+  variationIndex: number;
+}
+
+export function generatePlaceSearchQueriesByRole(
+  preference: ParsedTripPreference,
+  variationIndex = 0,
+): RoleSearchQuery[] {
+  const hasSpecificMealCuisine = Boolean(
+    preference.days?.some((day) =>
+      day.mealWindows?.some((meal) => (meal.cuisinePreferences?.length ?? 0) > 0),
+    ),
+  );
+  const queries: RoleSearchQuery[] = [];
+  const mealQueries =
+    preference.days?.flatMap(
+      (day) =>
+        day.mealWindows?.map((meal) => ({
+          role: 'restaurant',
+          query: meal.cuisinePreferences?.length
+            ? `${meal.cuisinePreferences.join(' ')} 맛집`
+            : '맛집',
+          variationIndex: 0,
+        })) ?? [],
+    ) ?? [];
+  queries.push(...mealQueries);
+  for (const interest of preference.interests) {
+    if (hasSpecificMealCuisine && interest === 'restaurant') continue;
+    const variants = SEARCH_TERM_VARIANTS[interest];
+    const query = variants?.[variationIndex % variants.length] ?? SEARCH_TERMS[interest];
+    if (query) queries.push({ role: interest, query, variationIndex });
+  }
+  if (queries.length === 0) {
+    return [
+      { role: 'attraction', query: '관광 명소', variationIndex },
+      { role: 'cafe', query: '카페', variationIndex },
+      { role: 'restaurant', query: '맛집', variationIndex },
+    ];
+  }
+  const seen = new Set<string>();
+  return queries.filter((query) => {
+    const key = `${query.role}:${query.query}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 @Injectable()
 export class PlaceSearchQueryGenerator {
   generate(preference: ParsedTripPreference, variationIndex = 0): string[] {
-    const hasSpecificMealCuisine = Boolean(
-      preference.days?.some((day) =>
-        day.mealWindows?.some((meal) => (meal.cuisinePreferences?.length ?? 0) > 0),
+    return [
+      ...new Set(
+        generatePlaceSearchQueriesByRole(preference, variationIndex).map((item) => item.query),
       ),
-    );
-    const interestQueries = preference.interests
-      .filter((interest) => !(hasSpecificMealCuisine && interest === 'restaurant'))
-      .map((interest) => {
-        const variants = SEARCH_TERM_VARIANTS[interest];
-        return variants?.[variationIndex % variants.length] ?? SEARCH_TERMS[interest];
-      })
-      .filter((query): query is string => Boolean(query));
-    const mealQueries =
-      preference.days?.flatMap(
-        (day) =>
-          day.mealWindows?.map((meal) =>
-            meal.cuisinePreferences?.length ? `${meal.cuisinePreferences.join(' ')} 맛집` : '맛집',
-          ) ?? [],
-      ) ?? [];
-    const queries = [...mealQueries, ...interestQueries];
-    return [...new Set(queries)].slice(0, 5).length > 0
-      ? [...new Set(queries)].slice(0, 5)
-      : ['관광 명소', '카페', '맛집'];
+    ].slice(0, 5);
   }
 }

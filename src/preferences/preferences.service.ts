@@ -35,8 +35,18 @@ function normalizedInterest(value: string): string {
   if (/편집|독립 상점|상점|쇼핑|shop|select/u.test(tag)) return 'shopping';
   if (/미술|박물|전시|gallery|museum|ギャラリー/u.test(tag)) return 'culture';
   if (/공원|숲|park|forest/u.test(tag)) return 'park';
+  if (
+    /산책|散歩|stroll|walking[_ ]?trail|riverside|하천|강변|정원|식물원|garden|botanical/u.test(tag)
+  )
+    return 'stroll';
   if (/한식|고기|식당|restaurant|food|焼肉/u.test(tag)) return 'restaurant';
   return value;
+}
+
+function isStrollDislike(text: string): boolean {
+  return /(산책|散歩|stroll)[^.!?。！？]{0,12}(?:싫|안\s*좋|좋아하지|좋지\s*않|したくない|好きじゃない|好きではない|嫌|苦手|dislike|hate|don't\s+(?:like|want))/iu.test(
+    text,
+  );
 }
 
 function inferredPreferenceTags(values: string[]): string[] {
@@ -239,6 +249,9 @@ export class PreferencesService {
           : (existing?.endTime ?? '21:00');
 
       const rawInterests = existing?.interests ?? rawPref.interests ?? ['cafe', 'culture'];
+      const normalizedRawInterests = rawInterests
+        .map(normalizedInterest)
+        .filter((interest) => !(interest === 'stroll' && isStrollDislike(input.text)));
       const rawPreferences = existing?.preferences ?? rawPref.preferences ?? [];
       const sourceFixedAppointments =
         existing?.fixedAppointments ??
@@ -285,7 +298,7 @@ export class PreferencesService {
           (dayNum === 1 ? (firstSourceDay?.mustVisitPlaces ?? []) : []),
         interests: [
           ...new Set([
-            ...rawInterests.map(normalizedInterest),
+            ...normalizedRawInterests,
             ...(input.mealCuisine === 'cafe_dessert' ? ['cafe'] : []),
             ...(mergedMealWindows.length > 0 ? ['restaurant'] : []),
           ]),

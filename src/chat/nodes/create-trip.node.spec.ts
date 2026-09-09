@@ -80,4 +80,29 @@ describe('createCreateTripNode', () => {
     expect(update.responseMessage).toContain('料理');
     expect(update.responseMessage).not.toContain('internal provider detail');
   });
+
+  it('passes locale and uses the generated preference area in the response title', async () => {
+    const generate = jest.fn().mockResolvedValue({
+      trip: {
+        id: 'trip-area',
+        estimatedTotalCost: null,
+        preference: { area: '홍대', days: [{ area: '홍대' }] },
+        stops: [],
+      },
+    });
+    const node = createCreateTripNode({ generate } as never);
+
+    const update = await node({
+      locale: 'ja',
+      messages: [],
+      createTripInput: { text: '弘大でカフェに行きたい', startArea: '성수' },
+      relaxations: [],
+    } as unknown as ChatState);
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ startArea: '성수', locale: 'ja' }),
+    );
+    expect(update.responseMessage).toContain('홍대');
+    expect(update.responseMessage).not.toContain('성수');
+  });
 });

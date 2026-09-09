@@ -141,9 +141,20 @@ export function createClarifyNode() {
                 },
               ];
 
+    const structuredActionChips = actionChips.map((chip) => {
+      const question = state.pendingQuestion;
+      if (state.clarificationKind !== 'meal' || question?.target !== 'meal') return chip;
+      const option = question.options.find(
+        (candidate) =>
+          candidate.mealCuisine === ('mealCuisine' in chip ? chip.mealCuisine : undefined) ||
+          candidate.mealPreference === ('mealPreference' in chip ? chip.mealPreference : undefined),
+      );
+      return option ? { ...chip, questionId: question.id, optionId: option.id } : chip;
+    });
+
     return Promise.resolve({
       responseMessage,
-      actionChips,
+      actionChips: structuredActionChips,
       status: 'completed',
     });
   };

@@ -122,13 +122,26 @@ export class KakaoPlaceProvider implements PlaceProvider {
       });
     }
 
+    const places = payload.documents
+      .map((document) => normalizeKakaoLocalDocument(document))
+      .filter((place): place is ProviderPlaceRecord => place !== null);
+    const unique = new Set(places.map((place) => place.sourcePlaceId)).size;
     const result: PlaceSearchResponse = {
       provider: this.name,
       providerMode: this.mode,
       query,
-      places: payload.documents
-        .map((document) => normalizeKakaoLocalDocument(document))
-        .filter((place): place is ProviderPlaceRecord => place !== null),
+      places,
+      diagnostics: {
+        fetched: payload.documents.length,
+        unique,
+        filteredOut: Math.max(payload.documents.length - unique, 0),
+        status:
+          payload.documents.length === 0
+            ? 'empty_response'
+            : places.length === 0
+              ? 'filtered_out'
+              : 'ok',
+      },
     };
     this.cache.set(cacheKey, result, this.config.getOrThrow<number>('PROVIDER_CACHE_TTL_SECONDS'));
     return result;

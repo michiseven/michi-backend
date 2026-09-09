@@ -4,8 +4,10 @@ import {
   IsIn,
   IsNotEmpty,
   IsObject,
+  IsInt,
   IsOptional,
   IsString,
+  Min,
 } from 'class-validator';
 import type { SafetyConstraintKind } from '../../trips/safety-constraints';
 import { TRIP_RELAXATIONS, type TripRelaxation } from '../../trips/trip-generation-recovery';
@@ -15,6 +17,26 @@ export class SendMessageDto {
   @IsNotEmpty()
   @IsString()
   message!: string;
+
+  /** Client-generated id used for idempotency/correlation at the API boundary. */
+  @IsOptional()
+  @IsString()
+  requestId?: string;
+
+  /** Structured answer metadata. The server resolves optionId from checkpoint state. */
+  @IsOptional()
+  @IsString()
+  questionId?: string;
+
+  @IsOptional()
+  @IsString()
+  optionId?: string;
+
+  /** Revision attached to the question shown to the user. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedRevision?: number;
 
   @IsOptional()
   @IsIn(['ko', 'ja'])

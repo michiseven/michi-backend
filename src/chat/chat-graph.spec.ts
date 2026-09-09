@@ -579,6 +579,107 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
     );
   });
 
+  it('keeps the original area, time, and activities across a meal clarification turn', async () => {
+    const threadId = 'thread-meal-follow-up';
+    const first: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('弘大で13時から18時までランチとカフェと散歩を楽しみたい')],
+        locale: 'ja',
+      },
+      { configurable: { thread_id: threadId } },
+    );
+
+    expect(first.responseMessage).toContain('どの食事ジャンル');
+    expect(first.pendingQuestion).toMatchObject({
+      id: 'meal-choice-1',
+      revision: 1,
+    });
+    expect(first.actionChips[0]).toMatchObject({
+      questionId: 'meal-choice-1',
+      optionId: 'korean',
+    });
+    mockTripsService.generate.mockClear();
+
+    const second: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('韓国料理でおすすめして')],
+        locale: 'ja',
+        mealCuisine: 'korean',
+        structuredChoice: { questionId: 'meal-choice-1', optionId: 'korean' },
+        responseMessage: null,
+      },
+      { configurable: { thread_id: threadId } },
+    );
+
+    expect(second.resultTripId).toBe('trip-new');
+    expect(mockTripsService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '弘大で13時から18時までランチとカフェと散歩を楽しみたい',
+        startArea: '홍대',
+        locale: 'ja',
+        mealCuisine: 'korean',
+      }),
+    );
+  });
+
+  it('treats a natural-language meal delegation as the answer and does not repeat the question', async () => {
+    const threadId = 'thread-meal-delegation';
+    const first: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('弘大でランチとカフェを楽しみたい')],
+        locale: 'ja',
+      },
+      { configurable: { thread_id: threadId } },
+    );
+    expect(first.responseMessage).toContain('どの食事ジャンル');
+    mockTripsService.generate.mockClear();
+
+    const second: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('このエリアで人気の名物に任せます')],
+        locale: 'ja',
+        responseMessage: null,
+      },
+      { configurable: { thread_id: threadId } },
+    );
+
+    expect(second.resultTripId).toBe('trip-new');
+    expect(second.responseMessage).not.toContain('どの食事ジャンル');
+    expect(mockTripsService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '弘大でランチとカフェを楽しみたい',
+        startArea: '홍대',
+        mealPreference: 'local_specialty',
+      }),
+    );
+  });
+
+  it('allows an explicit area change in the same turn as the meal answer', async () => {
+    const threadId = 'thread-meal-area-change';
+    await graph.invoke(
+      {
+        messages: [new HumanMessage('弘大でランチとカフェを楽しみたい')],
+        locale: 'ja',
+      },
+      { configurable: { thread_id: threadId } },
+    );
+    mockTripsService.generate.mockClear();
+
+    await graph.invoke(
+      {
+        messages: [new HumanMessage('江南で17時まで韓国料理にして')],
+        locale: 'ja',
+        mealCuisine: 'korean',
+        responseMessage: null,
+      },
+      { configurable: { thread_id: threadId } },
+    );
+
+    expect(mockTripsService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ startArea: '강남', endTime: '17:00', mealCuisine: 'korean' }),
+    );
+  });
+
   it('returns a structured current-trip summary with ordered stops, travel, and meals', async () => {
     const result: any = await graph.invoke(
       {

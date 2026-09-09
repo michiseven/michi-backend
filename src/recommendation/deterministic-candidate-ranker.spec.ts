@@ -2,6 +2,7 @@ import type { ParsedTripPreference } from '../preferences/preference.types';
 import type { CrowdObservation } from '../providers/crowd/crowd-provider';
 import {
   DeterministicCandidateRanker,
+  categoryMatches,
   dynamicScoreWeights,
 } from './deterministic-candidate-ranker';
 import type {
@@ -74,6 +75,12 @@ describe('DeterministicCandidateRanker', () => {
     place('cafe-near-2', 'cafe', 127.045, 37.5465),
     place('shop-far', 'shopping', 127.15, 37.62),
   ];
+
+  it('treats stroll as a distinct role whose accepted place types include park', () => {
+    expect(categoryMatches('park', ['stroll'])).toBe(true);
+    expect(categoryMatches('stroll', ['stroll'])).toBe(true);
+    expect(categoryMatches('stroll', ['park'])).toBe(false);
+  });
 
   it('calculates coordinate distance, category diversity, and a complete score breakdown', () => {
     const result = ranker.rank({ preference, places, crowd });
