@@ -7,6 +7,7 @@ export interface ActionChipDto {
   label: string;
   query: string;
   type?: string;
+  mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
 }
 
 export interface CreateThreadResponseDto {

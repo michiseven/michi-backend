@@ -31,6 +31,15 @@ export class SendMessageDto {
   @IsString()
   editToken?: string;
 
+  /** A selected stop chip is authoritative and bypasses natural-language target parsing. */
+  @IsOptional()
+  @IsObject()
+  mutationTarget?: {
+    stopId: string;
+    stopOrder: number;
+    placeName?: string;
+  } | null;
+
   @IsOptional()
   @IsObject()
   profile?: {

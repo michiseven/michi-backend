@@ -89,9 +89,13 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
     // CRITICAL: NEVER FALLBACK TO 1ST STOP ARBITRARILY!
     if (!targetStop) {
       const stopChips = currentStops.map((s, idx) => ({
-        label: `${idx + 1}. ${s.place?.name || '장소'}`,
-        query: `${idx + 1}번째 ${s.place?.name || '장소'} 다른 곳으로 바꿔줘`,
+        label: `${idx + 1}. ${s.place?.name || (isKo ? '장소' : 'スポット')}`,
+        // This readable query is only a fallback. The client should return mutationTarget.
+        query: isKo
+          ? `${idx + 1}번째 장소를 다른 곳으로 바꿔줘`
+          : `${idx + 1}番目のスポットを別の場所に変更して`,
         type: 'refine',
+        mutationTarget: { stopId: s.id, stopOrder: s.order, placeName: s.place?.name },
       }));
 
       return {

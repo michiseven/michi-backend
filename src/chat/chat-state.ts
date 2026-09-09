@@ -168,7 +168,14 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
-  actionChips: Annotation<Array<{ label: string; query: string; type?: string }>>({
+  actionChips: Annotation<
+    Array<{
+      label: string;
+      query: string;
+      type?: string;
+      mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
+    }>
+  >({
     reducer: (_, update) => update,
     default: () => [],
   }),

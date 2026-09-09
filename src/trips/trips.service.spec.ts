@@ -17,12 +17,15 @@ import type {
   CandidateRanker,
   OptimizeRouteInput,
   RankCandidatesInput,
+  RankedCandidate,
+  RouteStopPlan,
 } from '../recommendation/ports';
 import type { PlaceSearchQueryGenerator } from './place-search-query-generator';
 import {
   isAreaConstraint,
   placeAlternatives,
   routeLegOverrides,
+  completedRouteConstraintFailure,
   TripsService,
 } from './trips.service';
 import { DistanceBasedRoutingProvider } from '../routing/distance-based-routing.provider';
@@ -87,6 +90,136 @@ describe('routeLegOverrides', () => {
     );
 
     expect(Object.keys(result)).toEqual(['a->b', 'b->c']);
+  });
+});
+
+describe('completedRouteConstraintFailure', () => {
+  const scoreBreakdown = {
+    total: 1,
+    preference: 1,
+    crowd: 1,
+    distance: 1,
+    time: 1,
+    budget: 1,
+    diversity: 1,
+    area: 1,
+  };
+
+  function restaurantCandidate(name: string, rawCategory: string): RankedCandidate {
+    return {
+      place: {
+        placeId: 'restaurant-1',
+        source: 'naver',
+        sourcePlaceId: 'restaurant-1',
+        name,
+        category: 'restaurant',
+        address: '서울 성동구',
+        roadAddress: null,
+        location: { type: 'Point', coordinates: [127.04, 37.54] },
+        district: '성동구',
+        rawCategory,
+        rawPayload: {},
+      },
+      estimatedCost: null,
+      estimatedStayMinutes: 60,
+      reason: 'fixture',
+      scoreBreakdown,
+    };
+  }
+
+  it('rejects the reported family itinerary that runs past a 10:00–16:00 hard window', () => {
+    const candidate = restaurantCandidate('성수 스시', '음식점>일식>초밥,롤');
+    const input: OptimizeRouteInput = {
+      travelDate: '2026-09-09',
+      startTime: '10:00',
+      endTime: '16:00',
+      budget: null,
+      candidates: [candidate],
+      mealWindows: [
+        {
+          mealType: 'lunch',
+          targetTime: '12:00',
+          durationMinutes: 60,
+          cuisinePreferences: ['한식'],
+        },
+      ],
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T05:00:00.000Z', // 14:00 KST
+        leaveAt: '2026-09-09T07:10:00.000Z', // 16:10 KST
+        estimatedStayMinutes: 130,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+        stopType: 'meal',
+      },
+    ];
+
+    expect(completedRouteConstraintFailure(input, route, true)).toBe('route_constraints');
+  });
+
+  it('rejects a completed meal route whose verified cuisine conflicts with an explicit request', () => {
+    const candidate = restaurantCandidate('성수 스시', '음식점>일식>초밥,롤');
+    const input: OptimizeRouteInput = {
+      travelDate: '2026-09-09',
+      startTime: '10:00',
+      endTime: '13:00',
+      budget: null,
+      candidates: [candidate],
+      mealWindows: [
+        {
+          mealType: 'lunch',
+          targetTime: '12:00',
+          durationMinutes: 60,
+          cuisinePreferences: ['한식'],
+        },
+      ],
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T03:00:00.000Z', // 12:00 KST
+        leaveAt: '2026-09-09T04:00:00.000Z', // 13:00 KST
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+        stopType: 'meal',
+      },
+    ];
+
+    expect(completedRouteConstraintFailure(input, route, true)).toBe('meal_cuisine');
+    expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
+  });
+
+  it('rejects a five-hour request covered by only one hour of activity', () => {
+    const candidate = restaurantCandidate('한식당', '음식점>한식>비빔밥');
+    const input: OptimizeRouteInput = {
+      travelDate: '2026-09-09',
+      startTime: '13:00',
+      endTime: '18:00',
+      budget: null,
+      candidates: [candidate],
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-09-09T04:00:00.000Z', // 13:00 KST
+        leaveAt: '2026-09-09T05:00:00.000Z', // 14:00 KST
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: candidate.reason,
+        scoreBreakdown,
+        stopType: 'meal',
+      },
+    ];
+
+    expect(completedRouteConstraintFailure(input, route, false)).toBe('route_constraints');
   });
 });
 
@@ -452,8 +585,8 @@ describe('TripsService atomic stop editing', () => {
             {
               placeId: candidate.place.placeId,
               order: 1,
-              arrivalAt: `${input.travelDate}T14:00:00.000Z`,
-              leaveAt: `${input.travelDate}T15:00:00.000Z`,
+              arrivalAt: `${input.travelDate}T05:00:00.000Z`,
+              leaveAt: `${input.travelDate}T06:00:00.000Z`,
               estimatedStayMinutes: 60,
               estimatedCost: 10_000,
               reason: candidate.reason,
@@ -837,6 +970,7 @@ describe('TripsService atomic stop editing', () => {
               place: {
                 placeId: 'p-1',
                 name: '성수 카페',
+                category: 'cafe',
                 location: { type: 'Point', coordinates: [127.0, 37.5] },
                 rawPayload: {
                   sourceRecord: {
@@ -856,8 +990,8 @@ describe('TripsService atomic stop editing', () => {
           {
             placeId: 'p-1',
             order: 1,
-            arrivalAt: '2026-08-29T10:00:00.000Z',
-            leaveAt: '2026-08-29T11:00:00.000Z',
+            arrivalAt: '2026-08-29T01:00:00.000Z',
+            leaveAt: '2026-08-29T02:00:00.000Z',
             estimatedStayMinutes: 60,
             estimatedCost: 5000,
             reason: '좋은 카페',

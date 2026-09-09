@@ -1,38 +1,6 @@
-import { HttpException } from '@nestjs/common';
 import type { TripsService } from '../../trips/trips.service';
-import type { TripGenerationRecovery } from '../../trips/trip-generation-recovery';
 import type { ChatState, ChatUpdate } from '../chat-state';
-
-function recoveryFrom(error: unknown): TripGenerationRecovery | null {
-  if (!(error instanceof HttpException)) return null;
-  const response = error.getResponse();
-  if (!response || typeof response !== 'object') return null;
-  const recovery = (response as { recovery?: unknown }).recovery;
-  if (!recovery || typeof recovery !== 'object') return null;
-  const candidate = recovery as Partial<TripGenerationRecovery>;
-  return Array.isArray(candidate.actions) && typeof candidate.reason === 'string'
-    ? (candidate as TripGenerationRecovery)
-    : null;
-}
-
-function recoveryLabel(id: string, locale: 'ko' | 'ja'): string {
-  const labels =
-    locale === 'ko'
-      ? {
-          meal_cuisine: '음식 종류 조건 없이 다시 찾기',
-          search_radius: '인근 지역까지 포함해 다시 찾기',
-          route_constraints: '이동 제약을 완화해 다시 계산하기',
-        }
-      : {
-          meal_cuisine: '料理の条件を外して探し直す',
-          search_radius: '近くのエリアまで広げて探し直す',
-          route_constraints: '移動条件を緩めて計算し直す',
-        };
-  return (
-    labels[id as keyof typeof labels] ??
-    (locale === 'ko' ? '조건을 바꿔 다시 찾기' : '条件を変えて探し直す')
-  );
-}
+import { generationFailure } from '../generation-failure';
 
 export function createCreateTripNode(tripsService: TripsService) {
   return async (state: ChatState): Promise<ChatUpdate> => {
@@ -123,23 +91,12 @@ export function createCreateTripNode(tripsService: TripsService) {
         status: 'completed',
       };
     } catch (err) {
-      const recovery = recoveryFrom(err);
+      const failure = generationFailure(err, state.locale);
       return {
-        responseMessage: isKo
-          ? recovery
-            ? '조건에 맞는 장소를 모두 찾지 못했어요. 아래에서 원하는 조건 완화를 선택해 다시 찾아볼 수 있어요.'
-            : '일정을 만들지 못했어요. 조건을 고쳐서 다시 시도해 주세요.'
-          : recovery
-            ? '条件に合うスポットをすべて見つけられませんでした。下から条件を調整して、もう一度探せます。'
-            : '旅程を作成できませんでした。条件を修正してもう一度お試しください。',
-        errorCode: 'CREATE_TRIP_FAILED',
+        responseMessage: failure.message,
+        actionChips: failure.chips,
+        errorCode: failure.code,
         status: 'failed',
-        actionChips:
-          recovery?.actions.map((item) => ({
-            label: recoveryLabel(item.id, state.locale),
-            query: recoveryLabel(item.id, state.locale),
-            type: `recovery:${item.id}`,
-          })) ?? [],
       };
     }
   };

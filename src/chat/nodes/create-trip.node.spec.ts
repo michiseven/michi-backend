@@ -3,22 +3,11 @@ import { createCreateTripNode } from './create-trip.node';
 import type { ChatState } from '../chat-state';
 
 describe('createCreateTripNode', () => {
-  it('passes an explicit recovery relaxation and returns localized recovery chips', async () => {
+  it('keeps explicit relaxations and returns stable Japanese recovery without internal details', async () => {
     const generate = jest.fn().mockRejectedValue(
       new UnprocessableEntityException({
-        code: 'NO_CANDIDATES',
-        recovery: {
-          reason: 'meal_cuisine_unavailable',
-          dayNumber: 1,
-          area: '성수',
-          actions: [
-            {
-              id: 'meal_cuisine',
-              label: '음식 종류 조건 없이 다시 찾기',
-              requestPatch: { relaxations: ['meal_cuisine'] },
-            },
-          ],
-        },
+        code: 'MEAL_CUISINE_NOT_FOUND',
+        message: 'internal provider detail',
       }),
     );
     const node = createCreateTripNode({ generate } as never);
@@ -35,13 +24,12 @@ describe('createCreateTripNode', () => {
     );
     expect(update).toMatchObject({
       status: 'failed',
-      actionChips: [
-        expect.objectContaining({
-          type: 'recovery:meal_cuisine',
-          label: '料理の条件を外して探し直す',
-        }),
-      ],
+      errorCode: 'MEAL_CUISINE_NOT_FOUND',
     });
-    expect(update.responseMessage).not.toContain('조건에 맞는');
+    expect(update.actionChips).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'refine', label: '料理を変更' })]),
+    );
+    expect(update.responseMessage).toContain('料理');
+    expect(update.responseMessage).not.toContain('internal provider detail');
   });
 });

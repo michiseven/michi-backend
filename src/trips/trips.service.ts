@@ -47,9 +47,11 @@ import {
   ROUTE_OPTIMIZER,
   type CandidatePlace,
   type CandidateRanker,
+  type OptimizeRouteInput,
   type RankCandidatesResult,
   type RankedCandidate,
   type RouteOptimizer,
+  type RouteStopPlan,
 } from '../recommendation/ports';
 import { GenerateTripDto } from './dto/generate-trip.dto';
 import { PatchTripStopsDto } from './dto/patch-trip-stops.dto';
@@ -73,14 +75,19 @@ import {
 } from '../routing/routing-provider';
 import { PedestrianAccessibilityService } from '../routing/pedestrian-accessibility.service';
 import type { AccessibilityLegEvidence } from '../routing/accessibility-evidence';
-import { filterCandidatesForMealCuisine } from '../recommendation/cuisine-compatibility';
+import {
+  assessCuisineCompatibility,
+  filterCandidatesForMealCuisine,
+} from '../recommendation/cuisine-compatibility';
 import { categoryMatches } from '../recommendation/deterministic-candidate-ranker';
+import { RouteConstraintValidator } from '../recommendation/route-constraint-validator';
 import { localizePlaceName } from './place-name-localizer';
 import { PlaceDescriptionTranslationService } from '../place-details/place-description-translation.service';
 import type { LocalizedPlaceDescription } from '../place-details/place-description-translation.service';
 import { LogEvent, LogField } from '@logfriends/sdk';
 import { resolveSafetyRequests, safetyWarnings } from './safety-constraints';
 import { tripGenerationRecovery } from './trip-generation-recovery';
+import { completedItineraryEligibility } from './completed-itinerary-eligibility';
 
 function matchesPlaceName(query: string, placeName: string): boolean {
   const q = query.toLowerCase().replace(/\s+/g, '');
@@ -121,6 +128,68 @@ export function routeLegOverrides(
     result[`${route[index - 1]!.placeId}->${route[index]!.placeId}`] = leg;
   }
   return result;
+}
+
+/**
+ * The optimizer normally performs this validation itself. Keep this final gate at
+ * the trip boundary as well: providers and alternate optimizers must not turn a
+ * violated user constraint into a completed itinerary.
+ */
+export function completedRouteConstraintFailure(
+  input: OptimizeRouteInput,
+  route: RouteStopPlan[],
+  enforceMealCuisine: boolean,
+  providerBackedTravelMinutes = 0,
+): 'route_constraints' | 'meal_cuisine' | null {
+  if (!new RouteConstraintValidator().validate(input, route).valid) {
+    return 'route_constraints';
+  }
+
+  const tripWindowMinutes =
+    (new Date(`${input.travelDate}T${input.endTime}:00+09:00`).getTime() -
+      new Date(`${input.travelDate}T${input.startTime}:00+09:00`).getTime()) /
+    60_000;
+  const coveredMinutes =
+    route.reduce((sum, stop) => sum + stop.estimatedStayMinutes, 0) + providerBackedTravelMinutes;
+  if (
+    tripWindowMinutes >= 4 * 60 &&
+    tripWindowMinutes <= 6 * 60 &&
+    coveredMinutes < tripWindowMinutes * 0.6
+  ) {
+    return 'route_constraints';
+  }
+
+  if (!enforceMealCuisine) return null;
+  const cuisineWindows = (input.mealWindows ?? []).filter(
+    (window) => (window.cuisinePreferences?.length ?? 0) > 0,
+  );
+  if (cuisineWindows.length === 0) return null;
+
+  const candidatesByPlaceId = new Map(
+    input.candidates.map((candidate) => [candidate.place.placeId, candidate]),
+  );
+  const mealCandidates = route.flatMap((stop) => {
+    const candidate = candidatesByPlaceId.get(stop.placeId);
+    return stop.stopType === 'meal' && candidate ? [candidate] : [];
+  });
+  return cuisineWindows.every((window) =>
+    mealCandidates.some(
+      (candidate) =>
+        assessCuisineCompatibility(candidate, window.cuisinePreferences ?? []) === 'match',
+    ),
+  )
+    ? null
+    : 'meal_cuisine';
+}
+
+function providerBackedTravelMinutes(routes: Array<RouteLegEstimate | null>): number {
+  return routes.reduce(
+    (sum, route) =>
+      route?.evidence === 'measured' || route?.evidence === 'mixed'
+        ? sum + route.durationMinutes
+        : sum,
+    0,
+  );
 }
 
 function sanitizeVerifiedDescription(raw: string, maxLength = 500): string | null {
@@ -906,6 +975,35 @@ export class TripsService {
           route = measuredRoute;
         }
 
+        const completedConstraintFailure = completedRouteConstraintFailure(
+          { ...routeInput, candidates: routeCandidates },
+          route,
+          !relaxations.has('meal_cuisine'),
+          providerBackedTravelMinutes(legEvidence.routes),
+        );
+        if (completedConstraintFailure === 'meal_cuisine') {
+          throw new UnprocessableEntityException({
+            code: 'MEAL_CUISINE_NOT_FOUND',
+            message: `Day ${day.dayNumber} (${dayArea}) 일정의 식사 장소가 요청한 음식 종류와 일치하지 않습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'meal_cuisine_unavailable',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
+          });
+        }
+        if (completedConstraintFailure === 'route_constraints') {
+          throw new UnprocessableEntityException({
+            code: 'ROUTE_CONSTRAINTS_VIOLATED',
+            message: `Day ${day.dayNumber} (${dayArea}) 일정이 요청 시간 조건을 충족하지 못했습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'route_constraints_infeasible',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
+          });
+        }
+
         const indoorFallbacks = uniqueDayCandidates.filter(
           (c) => c.category === 'museum' || c.category === 'cafe',
         );
@@ -1013,6 +1111,41 @@ export class TripsService {
       for (const ranking of allRankings) {
         for (const candidate of ranking.candidates) {
           allCandidatesMap.set(candidate.place.placeId, candidate.place);
+        }
+      }
+
+      // Complete only when the finalized stops retain evidence for explicit
+      // user requirements. This runs after all route adjustments and is not a
+      // ranking preference that an alternate optimizer can silently bypass.
+      for (const day of tripDays) {
+        const dayStops = allSavedStops.filter(
+          (stop) => seoulDateString(stop.arrivalAt) === (day.date ?? travelDate),
+        );
+        const requestedThemes = [...day.interests, ...day.preferences].filter(
+          (value) => !/^(여행|관광|맛집|グルメ|旅行)$/iu.test(value.trim()),
+        );
+        const eligibility = completedItineraryEligibility({
+          startTime: day.startTime,
+          endTime: day.endTime,
+          requestedMeal: (day.mealWindows?.length ?? 0) > 0,
+          requestedThemes,
+          stops: dayStops.map((stop) => {
+            const candidate = allCandidatesMap.get(stop.placeId);
+            return {
+              stopType: stop.stopType,
+              estimatedStayMinutes: stop.estimatedStayMinutes,
+              name: candidate?.name,
+              category: candidate?.category,
+              rawCategory: candidate?.rawCategory,
+              inboundRoute: stop.inboundRoute,
+            };
+          }),
+        });
+        if (!eligibility.eligible) {
+          throw new UnprocessableEntityException({
+            code: eligibility.code,
+            message: 'The generated itinerary does not satisfy the completed-result evidence gate.',
+          });
         }
       }
 

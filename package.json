@@ -37,6 +37,7 @@
     "verify:kto": "ts-node -r tsconfig-paths/register src/verification/verify-kto.ts",
     "verify:datalab": "ts-node -r tsconfig-paths/register src/verification/verify-kto-datalab.ts",
     "verify:seoul": "ts-node -r tsconfig-paths/register src/verification/verify-seoul.ts",
+    "verify:live-chat": "ts-node -r tsconfig-paths/register src/verification/verify-live-chat.ts",
     "verify:subway": "ts-node -r tsconfig-paths/register src/verification/verify-seoul-subway.ts",
     "verify:bus": "ts-node -r tsconfig-paths/register src/verification/verify-seoul-bus.ts",
     "verify:postgis-candidates": "ts-node -r tsconfig-paths/register src/verification/verify-postgis-candidates.ts",

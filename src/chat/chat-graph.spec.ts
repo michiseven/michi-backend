@@ -506,6 +506,9 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
     expect(result.errorCode).toBe('TARGET_AMBIGUOUS');
     expect(result.responseMessage).toContain('어떤 장소를 변경할지 특정하지 못했습니다');
     expect(result.actionChips).toBeDefined();
+    expect(result.actionChips[0]).toMatchObject({
+      mutationTarget: { stopId: 'stop-1', stopOrder: 1, placeName: '이상의집' },
+    });
     expect(result.modification?.targetStopId).toBeFalsy();
     expect(mockTripsService.patchStops).not.toHaveBeenCalled();
   });

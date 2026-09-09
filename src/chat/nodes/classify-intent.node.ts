@@ -23,15 +23,20 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
       classifyIntentRuleBased(text, hasActiveTrip);
     const form = state.formTripContext;
     const mod = classification.modification;
-    const modification = mod
-      ? {
-          action: mod.action,
-          targetStopId: mod.targetStopId ?? null,
-          targetStopOrder: mod.targetStopOrder,
-          targetPlaceName: mod.targetPlaceName,
-          replacementQuery: mod.replacementQuery ?? null,
-        }
-      : null;
+    // A stop selected in the UI is authoritative session input. Do not feed its
+    // localized label back through intent parsing, which could pick another stop.
+    const selectedTarget = state.modification?.targetStopId ? state.modification : null;
+    const modification = selectedTarget
+      ? selectedTarget
+      : mod
+        ? {
+            action: mod.action,
+            targetStopId: mod.targetStopId ?? null,
+            targetStopOrder: mod.targetStopOrder,
+            targetPlaceName: mod.targetPlaceName,
+            replacementQuery: mod.replacementQuery ?? null,
+          }
+        : null;
 
     // ChatService initializes this context on every request, so an ignored
     // profile cannot leak from a LangGraph checkpoint into an example request.
@@ -59,7 +64,7 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
       : null;
 
     return {
-      intent: classification.intent,
+      intent: selectedTarget ? 'modify_trip' : classification.intent,
       clarificationQuestion: classification.clarificationQuestion ?? null,
       clarificationKind: classification.clarificationKind ?? null,
       modification,
