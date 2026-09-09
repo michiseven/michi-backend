@@ -93,6 +93,10 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
+  mealCuisine: Annotation<import('../preferences/preference.types').MealCuisine | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
   chatIntent: Annotation<'trip_summary' | null>({
     reducer: (_, update) => update,
     default: () => null,
@@ -128,6 +132,7 @@ export const ChatAnnotation = Annotation.Root({
     safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
     hasLuggage?: boolean;
     mealPreference?: 'local_specialty';
+    mealCuisine?: import('../preferences/preference.types').MealCuisine;
   } | null>({
     reducer: (_, update) => update,
     default: () => null,
@@ -184,6 +189,7 @@ export const ChatAnnotation = Annotation.Root({
       type?: string;
       mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
       mealPreference?: 'local_specialty';
+      mealCuisine?: import('../preferences/preference.types').MealCuisine;
       requestPatch?: { relaxations: TripRelaxation[] };
       requiresUserEdit?: boolean;
       intent?: 'trip_summary';

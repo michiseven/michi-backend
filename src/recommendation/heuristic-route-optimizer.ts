@@ -151,7 +151,7 @@ interface ScheduledCandidate {
   utility: number;
 }
 
-function determineStopType(candidate: RankedCandidate): TripStopType {
+function determineStopType(candidate: RankedCandidate, input: OptimizeRouteInput): TripStopType {
   if (
     /공항|airport|incheon|gimpo/i.test(candidate.place.name) ||
     candidate.place.rawCategory === 'airport' ||
@@ -172,6 +172,12 @@ function determineStopType(candidate: RankedCandidate): TripStopType {
     return 'basecamp';
   }
   if (candidate.place.category === 'restaurant') {
+    return 'meal';
+  }
+  if (
+    candidate.place.category === 'cafe' &&
+    input.mealWindows?.some((meal) => (meal.cuisinePreferences ?? []).includes('카페디저트'))
+  ) {
     return 'meal';
   }
   if (candidate.isAnchor || candidate.place.isAnchor) {
@@ -264,9 +270,13 @@ function scheduleCandidate(
   return { candidate, arrival, leave, utility };
 }
 
-function toPlan(scheduled: ScheduledCandidate, order: number): RouteStopPlan {
+function toPlan(
+  scheduled: ScheduledCandidate,
+  order: number,
+  input: OptimizeRouteInput,
+): RouteStopPlan {
   const candidate = scheduled.candidate;
-  const stopType = determineStopType(candidate);
+  const stopType = determineStopType(candidate, input);
   return {
     placeId: candidate.place.placeId,
     order,
@@ -334,7 +344,7 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
         usedCategories,
       );
       if (!scheduled) return [];
-      route.push(toPlan(scheduled, route.length + 1));
+      route.push(toPlan(scheduled, route.length + 1, input));
       knownCost += cost ?? 0;
       cursor = scheduled.leave;
       previous = candidate;
@@ -427,7 +437,7 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
         );
       const next = feasible[0];
       if (!next) break;
-      route.push(toPlan(next, route.length + 1));
+      route.push(toPlan(next, route.length + 1, input));
       remaining.splice(remaining.indexOf(next.candidate), 1);
       knownCost += next.candidate.estimatedCost ?? 0;
       cursor = next.leave;
@@ -452,7 +462,7 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
         leave,
         utility: 1.0,
       };
-      route.push(toPlan(scheduledAnchor, route.length + 1));
+      route.push(toPlan(scheduledAnchor, route.length + 1, input));
     }
 
     return route;

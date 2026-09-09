@@ -562,6 +562,23 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
     );
   });
 
+  it('uses a structured cuisine choice to create from the original request text', async () => {
+    const original = '홍대에서 13시부터 18시까지 점심 먹고 카페와 산책하고 싶어';
+    const result: any = await graph.invoke(
+      {
+        messages: [new HumanMessage(original)],
+        locale: 'ko',
+        mealCuisine: 'korean',
+      },
+      { configurable: { thread_id: 'thread-meal-cuisine' } },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(mockTripsService.generate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: original, mealCuisine: 'korean', startArea: '홍대' }),
+    );
+  });
+
   it('returns a structured current-trip summary with ordered stops, travel, and meals', async () => {
     const result: any = await graph.invoke(
       {

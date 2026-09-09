@@ -1022,7 +1022,14 @@ export class TripsService {
           const ranked = ranking.candidates.find(
             (candidate) => candidate.place.placeId === item.placeId,
           );
-          if (item.stopType === 'meal' && ranked?.place.category !== 'restaurant') {
+          const cafeDessertMeal =
+            ranked?.place.category === 'cafe' &&
+            day.mealWindows?.some((meal) => meal.cuisinePreferences?.includes('카페디저트'));
+          if (
+            item.stopType === 'meal' &&
+            ranked?.place.category !== 'restaurant' &&
+            !cafeDessertMeal
+          ) {
             throw new UnprocessableEntityException({
               code: 'PLACE_CATEGORY_ROLE_MISMATCH',
               message: `Day ${day.dayNumber}의 식사 일정에 음식점으로 검증되지 않은 장소가 포함되었습니다. 다시 추천해 주세요.`,

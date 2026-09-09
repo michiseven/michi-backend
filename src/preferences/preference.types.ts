@@ -1,5 +1,7 @@
 export type CompanionType = 'solo' | 'couple' | 'friends' | 'family' | 'other';
 export type TravelPace = 'relaxed' | 'balanced' | 'packed';
+export const MEAL_CUISINES = ['korean', 'japanese', 'chinese', 'western', 'cafe_dessert'] as const;
+export type MealCuisine = (typeof MEAL_CUISINES)[number];
 export type UserPriority =
   'crowd_avoidance' | 'must_visit' | 'short_transit' | 'interest' | 'budget' | 'luggage_storage';
 
@@ -92,6 +94,8 @@ export interface PreferenceParseInput {
   text: string;
   /** A local meal choice is a preference, never an asserted cuisine. */
   mealPreference?: 'local_specialty';
+  /** A cuisine chosen from a clarification chip, separate from free-form text. */
+  mealCuisine?: MealCuisine;
   startArea?: string;
   startTime?: string;
   endTime?: string;

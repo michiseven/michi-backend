@@ -4,6 +4,7 @@ import type {
   DayTripPreference,
   FixedAppointmentPreference,
   MealWindowPreference,
+  MealCuisine,
   ParsedTripPreference,
   PreferenceParseInput,
   PreferenceParseResult,
@@ -99,6 +100,16 @@ function normalizedCuisine(value: string): string {
   if (/한식|한국.*요리|한국.*料理|韓国料理|韓国食|korean/iu.test(value)) return '한식';
   if (/고기|焼肉|meat/iu.test(value)) return '고기';
   return value;
+}
+
+function selectedCuisine(value: MealCuisine): string {
+  return {
+    korean: '한식',
+    japanese: '일식',
+    chinese: '중식',
+    western: '양식',
+    cafe_dessert: '카페디저트',
+  }[value];
 }
 
 function mergeMealWindows(
@@ -237,9 +248,17 @@ export class PreferencesService {
       const mergedMealWindows = mergeMealWindows(
         sourceMealWindows,
         dayNum === 1 ? directMealWindows : [],
-      ).map((meal) =>
-        input.mealPreference === 'local_specialty' ? { ...meal, cuisinePreferences: [] } : meal,
-      );
+      ).map((meal) => {
+        if (input.mealPreference === 'local_specialty') {
+          return { ...meal, cuisinePreferences: [] };
+        }
+        // A clarification selection changes only the cuisine of an existing
+        // meal promise. It never appends a dinner or replaces the source text.
+        if (input.mealCuisine) {
+          return { ...meal, cuisinePreferences: [selectedCuisine(input.mealCuisine)] };
+        }
+        return meal;
+      });
       const dayAnchorPlace = existing?.anchorPlace ?? (dayNum === 1 ? rawPref.anchorPlace : null);
       synchronizedDays.push({
         dayNumber: dayNum,
@@ -267,6 +286,7 @@ export class PreferencesService {
         interests: [
           ...new Set([
             ...rawInterests.map(normalizedInterest),
+            ...(input.mealCuisine === 'cafe_dessert' ? ['cafe'] : []),
             ...(mergedMealWindows.length > 0 ? ['restaurant'] : []),
           ]),
         ],

@@ -70,4 +70,18 @@ describe('cuisine compatibility', () => {
     expect(result.excludedRestaurantCount).toBe(1);
     expect(result.matchedRestaurantCount).toBe(1);
   });
+
+  it.each([
+    ['일식', '홍대 스시', '음식점>일식'],
+    ['중식', '홍대 마라탕', '음식점>중식'],
+    ['양식', '홍대 파스타', '음식점>양식'],
+  ])('matches the structured %s selection against provider evidence', (cuisine, name, category) => {
+    expect(assessCuisineCompatibility(restaurant(name, category), [cuisine])).toBe('match');
+  });
+
+  it('accepts a verified cafe for a cafe-dessert meal choice', () => {
+    const cafe = restaurant('홍대 디저트 카페', '카페>디저트');
+    cafe.place.category = 'cafe';
+    expect(assessCuisineCompatibility(cafe, ['카페디저트'])).toBe('match');
+  });
 });

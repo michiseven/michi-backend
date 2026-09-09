@@ -8,10 +8,18 @@ const KOREAN_MARKERS =
 const STRONG_NON_KOREAN_NAME_MARKERS =
   /규카츠|돈카츠|돈까스|스시|초밥|사시미|라멘|우동|소바|이자카야|오마카세|파스타|피자|타코|쌀국수|마라탕|훠궈|딤섬|중식|일식|양식|베트남|태국|멕시칸/iu;
 const MEAT_MARKERS = /고기|육류|삼겹살|갈비|불고기|바비큐|바베큐|焼肉|meat|bbq/iu;
+const JAPANESE_MARKERS = /일식|일본.*요리|日本料理|스시|초밥|사시미|라멘|우동|소바|이자카야/iu;
+const CHINESE_MARKERS = /중식|중국.*요리|中国料理|마라탕|훠궈|딤섬|짜장|짬뽕/iu;
+const WESTERN_MARKERS = /양식|서양.*요리|洋食|파스타|피자|스테이크|버거|브런치/iu;
+const CAFE_DESSERT_MARKERS = /카페|커피|디저트|베이커리|스위츠|スイーツ|cafe|coffee|dessert/iu;
 
 function normalizeCuisine(value: string): string {
   if (/한식|한국.*요리|한국.*料理|韓国料理|韓国食|korean/iu.test(value)) return '한식';
   if (/고기|焼肉|meat|bbq/iu.test(value)) return '고기';
+  if (/일식|일본.*요리|日本料理|japanese/iu.test(value)) return '일식';
+  if (/중식|중국.*요리|中国料理|chinese/iu.test(value)) return '중식';
+  if (/양식|서양.*요리|洋食|western/iu.test(value)) return '양식';
+  if (/카페.*디저트|cafe.*dessert|カフェ.*スイーツ/iu.test(value)) return '카페디저트';
   return value.trim().toLowerCase();
 }
 
@@ -19,7 +27,10 @@ export function assessCuisineCompatibility(
   candidate: RankedCandidate,
   requestedCuisines: readonly string[],
 ): CuisineCompatibility {
-  if (candidate.place.category !== 'restaurant' || requestedCuisines.length === 0) {
+  if (
+    (candidate.place.category !== 'restaurant' && candidate.place.category !== 'cafe') ||
+    requestedCuisines.length === 0
+  ) {
     return 'match';
   }
 
@@ -39,6 +50,27 @@ export function assessCuisineCompatibility(
     if (requested === '고기') {
       sawKnownCuisine = true;
       if (MEAT_MARKERS.test(evidence)) return 'match';
+      continue;
+    }
+    if (requested === '일식') {
+      sawKnownCuisine = true;
+      if (JAPANESE_MARKERS.test(evidence)) return 'match';
+      continue;
+    }
+    if (requested === '중식') {
+      sawKnownCuisine = true;
+      if (CHINESE_MARKERS.test(evidence)) return 'match';
+      continue;
+    }
+    if (requested === '양식') {
+      sawKnownCuisine = true;
+      if (WESTERN_MARKERS.test(evidence)) return 'match';
+      continue;
+    }
+    if (requested === '카페디저트') {
+      sawKnownCuisine = true;
+      if (candidate.place.category === 'cafe' && CAFE_DESSERT_MARKERS.test(evidence))
+        return 'match';
       continue;
     }
     if (requested.length > 0 && evidence.toLowerCase().includes(requested)) return 'match';
@@ -71,7 +103,12 @@ export function filterCandidatesForMealCuisine(
   let excludedRestaurantCount = 0;
   let matchedRestaurantCount = 0;
   const filtered = candidates.filter((candidate) => {
-    if (candidate.place.category !== 'restaurant') return true;
+    const cafeDessertRequested = requested.includes('카페디저트');
+    if (
+      candidate.place.category !== 'restaurant' &&
+      (candidate.place.category !== 'cafe' || !cafeDessertRequested)
+    )
+      return true;
     const matches = assessCuisineCompatibility(candidate, requested) === 'match';
     if (matches) matchedRestaurantCount += 1;
     else excludedRestaurantCount += 1;

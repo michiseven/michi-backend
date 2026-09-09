@@ -1,6 +1,7 @@
 import type { PendingTripMutation, ReplacementCandidate, VerifiedPlaceFacts } from '../chat-state';
 import type { TripDto } from '../../trips/trip-response';
 import type { TripRelaxation } from '../../trips/trip-generation-recovery';
+import type { MealCuisine } from '../../preferences/preference.types';
 
 export type ChatRunStatus = 'completed' | 'awaiting_confirmation' | 'rejected' | 'failed';
 
@@ -10,6 +11,7 @@ export interface ActionChipDto {
   type?: string;
   mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
   mealPreference?: 'local_specialty';
+  mealCuisine?: MealCuisine;
   requestPatch?: { relaxations: TripRelaxation[] };
   requiresUserEdit?: boolean;
   intent?: 'trip_summary';

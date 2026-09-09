@@ -1,12 +1,17 @@
 import { IsArray, IsDateString, IsIn, IsOptional, Matches } from 'class-validator';
 import { ParsePreferenceDto } from '../../preferences/dto/parse-preference.dto';
 import { TRIP_RELAXATIONS, type TripRelaxation } from '../trip-generation-recovery';
+import { MEAL_CUISINES, type MealCuisine } from '../../preferences/preference.types';
 
 export class GenerateTripDto extends ParsePreferenceDto {
   /** Prefer a representative local meal without asserting a cuisine the user did not choose. */
   @IsOptional()
   @IsIn(['local_specialty'])
   mealPreference?: 'local_specialty';
+
+  @IsOptional()
+  @IsIn(MEAL_CUISINES)
+  mealCuisine?: MealCuisine;
 
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)

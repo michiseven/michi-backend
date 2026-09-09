@@ -64,6 +64,23 @@ describe('PreferencesService', () => {
     expect(hanok.preference.days?.[0]?.preferences).toContain('한옥');
   });
 
+  it('applies a structured cuisine choice to the original Hongdae lunch without inventing dinner', async () => {
+    const result = await service.parse({
+      text: '홍대에서 13시부터 18시까지 친구들과 점심 먹고 카페와 산책하고 싶어.',
+      mealCuisine: 'korean',
+    });
+    const day = result.preference.days?.[0];
+    expect(day).toMatchObject({ area: '홍대', startTime: '13:00', endTime: '18:00' });
+    expect(day?.interests).toContain('cafe');
+    expect(day?.mealWindows).toEqual([
+      expect.objectContaining({
+        mealType: 'lunch',
+        targetTime: '12:30',
+        cuisinePreferences: ['한식'],
+      }),
+    ]);
+  });
+
   it('preserves an exact party size and normalizes a per-person budget for ranking', async () => {
     const result = await service.parse({
       text: '성수에서 친구들과 카페 갈래',

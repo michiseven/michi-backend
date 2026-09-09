@@ -9,6 +9,7 @@ import {
 } from 'class-validator';
 import type { SafetyConstraintKind } from '../../trips/safety-constraints';
 import { TRIP_RELAXATIONS, type TripRelaxation } from '../../trips/trip-generation-recovery';
+import { MEAL_CUISINES, type MealCuisine } from '../../preferences/preference.types';
 
 export class SendMessageDto {
   @IsNotEmpty()
@@ -79,6 +80,11 @@ export class SendMessageDto {
   @IsOptional()
   @IsIn(['local_specialty'])
   mealPreference?: 'local_specialty';
+
+  /** A meal clarification choice. It must be applied to the original request, not chip text. */
+  @IsOptional()
+  @IsIn(MEAL_CUISINES)
+  mealCuisine?: MealCuisine;
 
   /** Structured actions that do not require natural-language reclassification. */
   @IsOptional()

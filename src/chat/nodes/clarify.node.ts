@@ -6,18 +6,48 @@ export function createClarifyNode() {
 
     const responseMessage =
       state.clarificationQuestion ??
-      (isKo
-        ? '어떤 분위기의 서울 여행을 원하시나요? 아래 추천 코스 중 마음에 드는 테마를 선택해 주시면 딱 맞는 최적 동선으로 안내해 드릴게요! ✨'
-        : 'どのような雰囲気のソウル旅行をご希望ですか？以下の人気コースから気になるものをお選びください！✨');
+      (state.clarificationKind === 'meal'
+        ? isKo
+          ? '어떤 식사 종류를 원하시나요? 한식·일식·중식·양식·카페·디저트 또는 지역 대표 메뉴 중에서 골라 주세요.'
+          : 'どの食事ジャンルをご希望ですか？韓国料理・日本料理・中華料理・洋食・カフェ・スイーツ、またはこのエリアの名物からお選びください。'
+        : isKo
+          ? '어떤 분위기의 서울 여행을 원하시나요? 아래 추천 코스 중 마음에 드는 테마를 선택해 주시면 딱 맞는 최적 동선으로 안내해 드릴게요! ✨'
+          : 'どのような雰囲気のソウル旅行をご希望ですか？以下の人気コースから気になるものをお選びください！✨');
 
     const actionChips =
       state.clarificationKind === 'meal'
         ? isKo
           ? [
-              { label: '한식', query: '한식으로 추천해줘', type: 'meal' },
-              { label: '일식', query: '일식으로 추천해줘', type: 'meal' },
-              { label: '중식', query: '중식으로 추천해줘', type: 'meal' },
-              { label: '양식', query: '양식으로 추천해줘', type: 'meal' },
+              {
+                label: '한식',
+                query: '한식으로 추천해줘',
+                type: 'meal',
+                mealCuisine: 'korean' as const,
+              },
+              {
+                label: '일식',
+                query: '일식으로 추천해줘',
+                type: 'meal',
+                mealCuisine: 'japanese' as const,
+              },
+              {
+                label: '중식',
+                query: '중식으로 추천해줘',
+                type: 'meal',
+                mealCuisine: 'chinese' as const,
+              },
+              {
+                label: '양식',
+                query: '양식으로 추천해줘',
+                type: 'meal',
+                mealCuisine: 'western' as const,
+              },
+              {
+                label: '카페·디저트',
+                query: '카페와 디저트로 추천해줘',
+                type: 'meal',
+                mealCuisine: 'cafe_dessert' as const,
+              },
               {
                 label: '지역 대표 메뉴로 추천',
                 query: '이 지역에서 유명한 메뉴로 추천해줘',
@@ -26,10 +56,36 @@ export function createClarifyNode() {
               },
             ]
           : [
-              { label: '韓国料理', query: '韓国料理でおすすめして', type: 'meal' },
-              { label: '日本料理', query: '日本料理でおすすめして', type: 'meal' },
-              { label: '中華料理', query: '中華料理でおすすめして', type: 'meal' },
-              { label: '洋食', query: '洋食でおすすめして', type: 'meal' },
+              {
+                label: '韓国料理',
+                query: '韓国料理でおすすめして',
+                type: 'meal',
+                mealCuisine: 'korean' as const,
+              },
+              {
+                label: '日本料理',
+                query: '日本料理でおすすめして',
+                type: 'meal',
+                mealCuisine: 'japanese' as const,
+              },
+              {
+                label: '中華料理',
+                query: '中華料理でおすすめして',
+                type: 'meal',
+                mealCuisine: 'chinese' as const,
+              },
+              {
+                label: '洋食',
+                query: '洋食でおすすめして',
+                type: 'meal',
+                mealCuisine: 'western' as const,
+              },
+              {
+                label: 'カフェ・スイーツ',
+                query: 'カフェとスイーツでおすすめして',
+                type: 'meal',
+                mealCuisine: 'cafe_dessert' as const,
+              },
               {
                 label: 'このエリアの名物に任せる',
                 query: 'このエリアで人気のローカルグルメをおすすめして',

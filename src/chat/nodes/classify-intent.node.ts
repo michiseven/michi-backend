@@ -41,9 +41,12 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
     // ChatService initializes this context on every request, so an ignored
     // profile cannot leak from a LangGraph checkpoint into an example request.
     const forcedLocalSpecialty = state.mealPreference === 'local_specialty';
+    const forcedMealCuisine = Boolean(state.mealCuisine);
     const baseTripInput =
       classification.createTripInput ??
-      (forcedLocalSpecialty ? classifyIntentRuleBased(text, false).createTripInput : null);
+      (forcedLocalSpecialty || forcedMealCuisine
+        ? classifyIntentRuleBased(text, false).createTripInput
+        : null);
     const createTripInput = baseTripInput
       ? {
           ...baseTripInput,
@@ -65,6 +68,7 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
           safetyConstraints: form?.safetyConstraints,
           hasLuggage: form?.hasLuggage,
           ...(forcedLocalSpecialty ? { mealPreference: 'local_specialty' as const } : {}),
+          ...(state.mealCuisine ? { mealCuisine: state.mealCuisine } : {}),
         }
       : null;
 
@@ -75,7 +79,9 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
           ? 'summarize_trip'
           : forcedLocalSpecialty
             ? 'create_trip'
-            : classification.intent,
+            : forcedMealCuisine
+              ? 'create_trip'
+              : classification.intent,
       clarificationQuestion: classification.clarificationQuestion ?? null,
       clarificationKind: classification.clarificationKind ?? null,
       modification,

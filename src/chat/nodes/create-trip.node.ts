@@ -36,6 +36,7 @@ export function createCreateTripNode(tripsService: TripsService) {
         hasLuggage: input?.hasLuggage,
         relaxations: state.relaxations,
         mealPreference: input?.mealPreference,
+        mealCuisine: input?.mealCuisine,
       });
 
       const currency = new Intl.NumberFormat(isKo ? 'ko-KR' : 'ja-JP');

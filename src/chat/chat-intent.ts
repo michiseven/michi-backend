@@ -131,7 +131,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
 
   // 4. Check for New Trip creation
   const isCreate =
-    /일정|코스|플랜|여행|투어|가고\s*싶어|짜줘|만들어줘|계획|プラン|旅程|コース|行きたい|作って/.test(
+    /일정|코스|플랜|여행|투어|가고\s*싶어|짜줘|만들어줘|계획|プラン|旅程|コース|行きたい|作って|散歩|歩き|カフェ|食べ|グルメ|楽し|巡り/.test(
       trimmed,
     ) ||
     /(성수|명동|홍대|강남|을지로|동대문|잠실|여의도|안국|서촌|북촌|이태원|한남|聖水|明洞|弘大|江南|乙支路)/.test(
@@ -144,6 +144,16 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
     );
     const budgetMatch = trimmed.match(/(\d+)\s*만\s*원/);
     const budget = budgetMatch ? parseInt(budgetMatch[1]!, 10) * 10000 : undefined;
+    // The deterministic fallback mirrors the Japanese first-visitor flow.
+    // Korean requests keep their established direct-create behavior when the LLM is unavailable.
+    const needsMealChoice = /ランチ|昼食|夕食|グルメ|食べ/iu.test(trimmed);
+    const hasCuisine =
+      /한식|일식|중식|양식|고기|韓国料理|日本料理|中華料理|洋食|焼肉|korean|japanese|chinese|western/iu.test(
+        trimmed,
+      );
+    if (needsMealChoice && !hasCuisine) {
+      return { intent: 'clarify', clarificationKind: 'meal' };
+    }
 
     return {
       intent: 'create_trip',
