@@ -40,31 +40,42 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
 
     // ChatService initializes this context on every request, so an ignored
     // profile cannot leak from a LangGraph checkpoint into an example request.
-    const createTripInput = classification.createTripInput
+    const forcedLocalSpecialty = state.mealPreference === 'local_specialty';
+    const baseTripInput =
+      classification.createTripInput ??
+      (forcedLocalSpecialty ? classifyIntentRuleBased(text, false).createTripInput : null);
+    const createTripInput = baseTripInput
       ? {
-          ...classification.createTripInput,
+          ...baseTripInput,
           // 입국일의 첫 일정 시작, 출국일의 마지막 일정 종료라는 의미로만 전달한다.
           // 실제 다일차 일자별 후보·동선 산정은 TripsService가 계속 담당한다.
-          travelDate: form?.arrivalDate ?? classification.createTripInput.travelDate,
+          travelDate: form?.arrivalDate ?? baseTripInput.travelDate,
           startDate: form?.arrivalDate,
           endDate: form?.departureDate,
-          startTime: form?.arrivalTime ?? classification.createTripInput.startTime,
-          endTime: form?.departureTime ?? classification.createTripInput.endTime,
+          startTime: form?.arrivalTime ?? baseTripInput.startTime,
+          endTime: form?.departureTime ?? baseTripInput.endTime,
           arrivalAirport: form?.arrivalAirport,
           departureAirport: form?.departureAirport,
-          hotel: form?.hotel ?? classification.createTripInput.hotel,
-          partySize: form?.partySize ?? classification.createTripInput.partySize,
-          budget: form?.budget ?? classification.createTripInput.budget,
+          hotel: form?.hotel ?? baseTripInput.hotel,
+          partySize: form?.partySize ?? baseTripInput.partySize,
+          budget: form?.budget ?? baseTripInput.budget,
           budgetScope: form?.budgetScope,
           companions: form?.companions,
           pace: form?.pace,
           safetyConstraints: form?.safetyConstraints,
           hasLuggage: form?.hasLuggage,
+          ...(forcedLocalSpecialty ? { mealPreference: 'local_specialty' as const } : {}),
         }
       : null;
 
     return {
-      intent: selectedTarget ? 'modify_trip' : classification.intent,
+      intent: selectedTarget
+        ? 'modify_trip'
+        : state.chatIntent === 'trip_summary'
+          ? 'summarize_trip'
+          : forcedLocalSpecialty
+            ? 'create_trip'
+            : classification.intent,
       clarificationQuestion: classification.clarificationQuestion ?? null,
       clarificationKind: classification.clarificationKind ?? null,
       modification,

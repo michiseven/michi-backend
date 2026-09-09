@@ -73,16 +73,6 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
         if (cafeStops.length === 1) {
           targetStop = cafeStops[0];
         }
-      } else if (/저녁|저녁식사|디너|夕食|ディナー/.test(text)) {
-        // Last meal stop or dinner stop
-        const foodStops = currentStops.filter((s) =>
-          /음식점|식당|한식|일식|양식|고기|맛집|グルメ|レストラン/i.test(
-            s.place?.category || s.place?.rawCategory || '',
-          ),
-        );
-        if (foodStops.length > 0) {
-          targetStop = foodStops[foodStops.length - 1];
-        }
       }
     }
 

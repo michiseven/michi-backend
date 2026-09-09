@@ -267,6 +267,8 @@ export class ChatService implements OnModuleInit {
       // influence intent classification or the next generated itinerary.
       currentTripId: dto.startFreshTrip ? null : dto.currentTripId || thread.tripId || null,
       relaxations: dto.relaxations ?? [],
+      mealPreference: dto.mealPreference ?? null,
+      chatIntent: dto.chatIntent ?? null,
       // 아래 값은 한 번의 사용자 턴에만 유효하다. 이전 checkpoint 값을 명시적으로
       // 비우지 않으면 validate_input이 과거 응답을 현재 응답으로 오인한다.
       intent: null,

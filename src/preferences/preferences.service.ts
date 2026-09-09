@@ -237,6 +237,8 @@ export class PreferencesService {
       const mergedMealWindows = mergeMealWindows(
         sourceMealWindows,
         dayNum === 1 ? directMealWindows : [],
+      ).map((meal) =>
+        input.mealPreference === 'local_specialty' ? { ...meal, cuisinePreferences: [] } : meal,
       );
       const dayAnchorPlace = existing?.anchorPlace ?? (dayNum === 1 ? rawPref.anchorPlace : null);
       synchronizedDays.push({
@@ -268,7 +270,13 @@ export class PreferencesService {
             ...(mergedMealWindows.length > 0 ? ['restaurant'] : []),
           ]),
         ],
-        preferences: [...new Set([...rawPreferences, ...inferredPreferenceTags(rawInterests)])],
+        preferences: [
+          ...new Set([
+            ...rawPreferences,
+            ...inferredPreferenceTags(rawInterests),
+            ...(input.mealPreference === 'local_specialty' ? ['local'] : []),
+          ]),
+        ],
         avoid: existing?.avoid ?? rawPref.avoid ?? ['crowded'],
         maxWalkMinutes: existing?.maxWalkMinutes ?? rawPref.maxWalkMinutes ?? null,
         anchorPlace:

@@ -74,4 +74,14 @@ export class SendMessageDto {
   @IsArray()
   @IsIn(TRIP_RELAXATIONS, { each: true })
   relaxations?: TripRelaxation[];
+
+  /** A meal choice that prefers locally representative food without inventing a cuisine constraint. */
+  @IsOptional()
+  @IsIn(['local_specialty'])
+  mealPreference?: 'local_specialty';
+
+  /** Structured actions that do not require natural-language reclassification. */
+  @IsOptional()
+  @IsIn(['trip_summary'])
+  chatIntent?: 'trip_summary';
 }

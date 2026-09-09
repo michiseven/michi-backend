@@ -545,4 +545,37 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
     expect(snapshot1.values.responseMessage).toContain('이상의집');
     expect(snapshot2.values.resultTripId).toBe('trip-new');
   });
+
+  it('uses a structured local-specialty meal choice to create without a cuisine constraint', async () => {
+    const result: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('성수에서 점심 포함 여행 일정 짜줘')],
+        locale: 'ko',
+        mealPreference: 'local_specialty',
+      },
+      { configurable: { thread_id: 'thread-local-specialty' } },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(mockTripsService.generate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mealPreference: 'local_specialty' }),
+    );
+  });
+
+  it('returns a structured current-trip summary with ordered stops, travel, and meals', async () => {
+    const result: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('현재 일정 전체를 요약해줘')],
+        currentTripId: 'trip-100',
+        locale: 'ko',
+        chatIntent: 'trip_summary',
+      },
+      { configurable: { thread_id: 'thread-summary' } },
+    );
+
+    expect(result.status).toBe('completed');
+    expect(result.responseMessage).toContain('1. 이상의집');
+    expect(result.responseMessage).toContain('2. 토속촌 삼계탕');
+    expect(result.responseMessage).toContain('식사 장소:');
+  });
 });

@@ -90,6 +90,8 @@ export interface ParsedTripPreference {
 
 export interface PreferenceParseInput {
   text: string;
+  /** A local meal choice is a preference, never an asserted cuisine. */
+  mealPreference?: 'local_specialty';
   startArea?: string;
   startTime?: string;
   endTime?: string;

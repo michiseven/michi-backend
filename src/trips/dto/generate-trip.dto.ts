@@ -3,6 +3,11 @@ import { ParsePreferenceDto } from '../../preferences/dto/parse-preference.dto';
 import { TRIP_RELAXATIONS, type TripRelaxation } from '../trip-generation-recovery';
 
 export class GenerateTripDto extends ParsePreferenceDto {
+  /** Prefer a representative local meal without asserting a cuisine the user did not choose. */
+  @IsOptional()
+  @IsIn(['local_specialty'])
+  mealPreference?: 'local_specialty';
+
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsDateString({ strict: true })

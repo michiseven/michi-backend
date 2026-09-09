@@ -1,8 +1,15 @@
+import type { TripRelaxation } from '../trips/trip-generation-recovery';
+
 /** A stable boundary between internal generation exceptions and the chat API. */
 export interface GenerationFailure {
   code: string;
   message: string;
-  chips: Array<{ label: string; query: string; type: 'refine' }>;
+  chips: Array<{
+    label: string;
+    query: string;
+    type: 'refine';
+    requestPatch?: { relaxations: TripRelaxation[] };
+  }>;
 }
 
 function exceptionCode(error: unknown): string | null {
@@ -43,9 +50,24 @@ export function generationFailure(error: unknown, locale: 'ko' | 'ja'): Generati
       message:
         '指定した料理を確認できる食事スポットが見つかりませんでした。料理かエリアの条件を少し緩めてください。',
       chips: [
-        { label: '近いエリアも許可', query: '近いエリアも含めて食事を探して', type: 'refine' },
-        { label: '料理を変更', query: '料理の指定を外して旅程を作って', type: 'refine' },
-        { label: '時間を広げる', query: '食事の時間を30分広げて', type: 'refine' },
+        {
+          label: '近いエリアも許可',
+          query: '近いエリアも含めて食事を探して',
+          type: 'refine',
+          requestPatch: { relaxations: ['search_radius'] },
+        },
+        {
+          label: '料理を変更',
+          query: '料理の指定を外して旅程を作って',
+          type: 'refine',
+          requestPatch: { relaxations: ['meal_cuisine'] },
+        },
+        {
+          label: '時間を広げる',
+          query: '食事の時間を30分広げて',
+          type: 'refine',
+          requestPatch: { relaxations: ['route_constraints'] },
+        },
       ],
     },
     ROUTE_EVIDENCE_INFEASIBLE: {
@@ -53,9 +75,24 @@ export function generationFailure(error: unknown, locale: 'ko' | 'ja'): Generati
       message:
         '確認できる移動時間では、指定の時間内に収まりませんでした。時間かエリアを調整してください。',
       chips: [
-        { label: '30分延ばす', query: '終了時刻を30分遅らせて', type: 'refine' },
-        { label: '近いエリアに絞る', query: '近いエリアだけで旅程を作って', type: 'refine' },
-        { label: '移動を少なくする', query: '移動を少なくして旅程を作って', type: 'refine' },
+        {
+          label: '30分延ばす',
+          query: '終了時刻を30分遅らせて',
+          type: 'refine',
+          requestPatch: { relaxations: ['route_constraints'] },
+        },
+        {
+          label: '近いエリアに絞る',
+          query: '近いエリアだけで旅程を作って',
+          type: 'refine',
+          requestPatch: { relaxations: ['search_radius'] },
+        },
+        {
+          label: '移動を少なくする',
+          query: '移動を少なくして旅程を作って',
+          type: 'refine',
+          requestPatch: { relaxations: ['route_constraints'] },
+        },
       ],
     },
     MANDATORY_PLACE_NOT_FOUND: {

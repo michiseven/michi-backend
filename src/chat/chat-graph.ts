@@ -19,6 +19,7 @@ import { createResolveModificationTargetNode } from './nodes/resolve-modificatio
 import { createFindReplacementCandidatesNode } from './nodes/find-replacement-candidates.node';
 import { createRequestApprovalNode } from './nodes/request-approval.node';
 import { createExecuteModificationNode } from './nodes/execute-modification.node';
+import { createSummarizeTripNode } from './nodes/summarize-trip.node';
 import {
   createEnrichPlaceDetailsNode,
   shouldEnrichPlaceDetails,
@@ -50,6 +51,7 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
     .addNode('enrich_place_details', createEnrichPlaceDetailsNode(deps.placeDetailEnrichment))
     .addNode('answer_grounded', createAnswerGroundedQuestionNode())
     .addNode('create_trip', createCreateTripNode(deps.tripsService))
+    .addNode('summarize_trip', createSummarizeTripNode(deps.tripsRepo))
     .addNode('clarify', createClarifyNode())
     .addNode('resolve_target', createResolveModificationTargetNode(deps.tripsRepo))
     .addNode(
@@ -77,6 +79,8 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
           return 'load_verified_facts';
         case 'create_trip':
           return 'create_trip';
+        case 'summarize_trip':
+          return 'summarize_trip';
         case 'modify_trip':
           return 'resolve_target';
         case 'clarify':
@@ -94,6 +98,7 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
 
     // Linear flow for trip creation and clarification
     .addEdge('create_trip', END)
+    .addEdge('summarize_trip', END)
     .addEdge('clarify', END)
 
     // Modification flow

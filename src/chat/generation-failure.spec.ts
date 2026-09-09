@@ -14,6 +14,14 @@ describe('generationFailure', () => {
     expect(failure.message).toContain('料理');
     expect(failure.message).not.toContain('internal detail');
     expect(failure.chips.length).toBeLessThanOrEqual(3);
+    expect(failure.chips).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: '料理を変更',
+          requestPatch: { relaxations: ['meal_cuisine'] },
+        }),
+      ]),
+    );
   });
 
   it.each(['INSUFFICIENT_VERIFIED_COVERAGE', 'MEAL_EVIDENCE_MISSING', 'THEME_EVIDENCE_MISSING'])(

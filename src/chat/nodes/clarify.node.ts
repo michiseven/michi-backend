@@ -22,6 +22,7 @@ export function createClarifyNode() {
                 label: '지역 대표 메뉴로 추천',
                 query: '이 지역에서 유명한 메뉴로 추천해줘',
                 type: 'meal',
+                mealPreference: 'local_specialty' as const,
               },
             ]
           : [
@@ -33,6 +34,7 @@ export function createClarifyNode() {
                 label: 'このエリアの名物に任せる',
                 query: 'このエリアで人気のローカルグルメをおすすめして',
                 type: 'meal',
+                mealPreference: 'local_specialty' as const,
               },
             ]
         : state.clarificationQuestion

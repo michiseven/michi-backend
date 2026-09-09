@@ -77,7 +77,7 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => 'ja',
   }),
-  intent: Annotation<'qa' | 'clarify' | 'create_trip' | 'modify_trip' | null>({
+  intent: Annotation<'qa' | 'clarify' | 'create_trip' | 'modify_trip' | 'summarize_trip' | null>({
     reducer: (_, update) => update,
     default: () => null,
   }),
@@ -88,6 +88,14 @@ export const ChatAnnotation = Annotation.Root({
   relaxations: Annotation<TripRelaxation[]>({
     reducer: (_, update) => update,
     default: () => [],
+  }),
+  mealPreference: Annotation<'local_specialty' | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  chatIntent: Annotation<'trip_summary' | null>({
+    reducer: (_, update) => update,
+    default: () => null,
   }),
   modification: Annotation<{
     action: 'remove' | 'replace';
@@ -119,6 +127,7 @@ export const ChatAnnotation = Annotation.Root({
     pace?: 'relaxed' | 'standard' | 'packed';
     safetyConstraints?: import('../trips/safety-constraints').SafetyConstraintKind[];
     hasLuggage?: boolean;
+    mealPreference?: 'local_specialty';
   } | null>({
     reducer: (_, update) => update,
     default: () => null,
@@ -174,6 +183,9 @@ export const ChatAnnotation = Annotation.Root({
       query: string;
       type?: string;
       mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
+      mealPreference?: 'local_specialty';
+      requestPatch?: { relaxations: TripRelaxation[] };
+      intent?: 'trip_summary';
     }>
   >({
     reducer: (_, update) => update,
