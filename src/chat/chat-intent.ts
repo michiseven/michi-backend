@@ -3,6 +3,7 @@ export type IntentType = 'qa' | 'clarify' | 'create_trip' | 'modify_trip';
 export interface ClassifiedIntent {
   intent: IntentType;
   clarificationQuestion?: string | null;
+  clarificationKind?: 'meal' | 'general' | null;
   placeNameQuery?: string;
   modification?: {
     action: 'remove' | 'replace';

@@ -280,6 +280,7 @@ export class ChatService implements OnModuleInit {
       pendingAction: null,
       responseMessage: null,
       clarificationQuestion: null,
+      clarificationKind: null,
       actionChips: [],
       resultTripId: null,
       resultTrip: null,

@@ -13,8 +13,13 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
     const text = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
     const hasActiveTrip = Boolean(state.currentTripId);
 
+    const conversation = state.messages
+      .slice(-6)
+      .map((message) => (typeof message.content === 'string' ? message.content : ''))
+      .filter(Boolean)
+      .join('\n');
     const classification =
-      (await classifyIntentWithLlm(openaiApiKey, text, hasActiveTrip)) ??
+      (await classifyIntentWithLlm(openaiApiKey, text, hasActiveTrip, conversation)) ??
       classifyIntentRuleBased(text, hasActiveTrip);
     const form = state.formTripContext;
     const mod = classification.modification;
@@ -56,6 +61,7 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
     return {
       intent: classification.intent,
       clarificationQuestion: classification.clarificationQuestion ?? null,
+      clarificationKind: classification.clarificationKind ?? null,
       modification,
       createTripInput,
     };

@@ -177,7 +177,7 @@ export function dynamicScoreWeights(input: RankCandidatesInput): TourismScoreWei
   return normalizedWeights(weights);
 }
 
-function categoryMatches(category: string | null, interests: string[]): boolean {
+export function categoryMatches(category: string | null, interests: string[]): boolean {
   if (!category) return false;
   return interests.some((interest) =>
     (CATEGORY_ALIASES[normalizeTag(interest)] ?? [normalizeTag(interest)]).includes(category),

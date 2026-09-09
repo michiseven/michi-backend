@@ -8,6 +8,7 @@ const IntentOutputSchema = z.object({
   readiness: z.enum(['ready', 'ready_with_defaults', 'needs_one_answer', 'blocked']),
   area: z.string().nullable(),
   clarificationQuestion: z.string().nullable(),
+  clarificationKind: z.enum(['meal', 'general']).nullable(),
 });
 
 const INSTRUCTIONS = `You classify the latest message for Michi, a Seoul itinerary planner.
@@ -16,6 +17,7 @@ Return only the requested structured object.
 Treat natural language such as "걷고 싶어요", "즐기고 싶어요", "방문하고 싶어요" as a trip request when it expresses a Seoul area or activity.
 The default user is a first-time Japanese solo visitor who knows nothing about Seoul. Do not ask a question merely because area, time, party size, or budget is missing: create a draft using product defaults instead.
 Ask exactly one short clarification only when a missing fact changes safety or makes the itinerary impossible (for example: an ambiguous place replacement, contradictory flight/appointment times, accessibility requirements with no usable location/time).
+If the user asks for a meal or the requested itinerary needs a meal but cuisine is unspecified, ask one meal clarification before creating the itinerary. Set clarificationKind=meal and offer Korean, Japanese, Chinese, Western, cafe/dessert, or a local specialty recommendation.
 Use clarify only for that case. For a blank or very vague request, create_trip with readiness ready_with_defaults.
 Use qa only for a factual question about a place, and modify_trip only for an existing itinerary edit request.`;
 
@@ -23,6 +25,7 @@ export async function classifyIntentWithLlm(
   apiKey: string | undefined,
   message: string,
   hasActiveTrip: boolean,
+  conversation: string,
 ): Promise<ClassifiedIntent | null> {
   if (!apiKey) return null;
   try {
@@ -31,7 +34,10 @@ export async function classifyIntentWithLlm(
       model: process.env.OPENAI_MODEL ?? 'gpt-5.6-luna',
       input: [
         { role: 'system', content: INSTRUCTIONS },
-        { role: 'user', content: `hasActiveTrip: ${hasActiveTrip}\nmessage: ${message}` },
+        {
+          role: 'user',
+          content: `hasActiveTrip: ${hasActiveTrip}\nconversation:\n${conversation}\nlatest message: ${message}`,
+        },
       ],
       text: { format: zodTextFormat(IntentOutputSchema, 'chat_intent') },
     });
@@ -49,7 +55,11 @@ export async function classifyIntentWithLlm(
       };
     }
     if (parsed.intent === 'clarify' && parsed.readiness === 'needs_one_answer') {
-      return { intent: 'clarify', clarificationQuestion: parsed.clarificationQuestion };
+      return {
+        intent: 'clarify',
+        clarificationQuestion: parsed.clarificationQuestion,
+        clarificationKind: parsed.clarificationKind,
+      };
     }
     return { intent: parsed.intent };
   } catch {

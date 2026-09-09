@@ -74,6 +74,7 @@ import {
 import { PedestrianAccessibilityService } from '../routing/pedestrian-accessibility.service';
 import type { AccessibilityLegEvidence } from '../routing/accessibility-evidence';
 import { filterCandidatesForMealCuisine } from '../recommendation/cuisine-compatibility';
+import { categoryMatches } from '../recommendation/deterministic-candidate-ranker';
 import { localizePlaceName } from './place-name-localizer';
 import { PlaceDescriptionTranslationService } from '../place-details/place-description-translation.service';
 import type { LocalizedPlaceDescription } from '../place-details/place-description-translation.service';
@@ -691,14 +692,36 @@ export class TripsService {
           });
         }
 
+        // Area matching is performed by the spatial filter above. A requested
+        // category is a hard candidate contract, not merely a ranking bonus.
+        // Anchors remain because the user explicitly fixed them.
+        const categoryMatchedCandidates =
+          day.interests.length > 0
+            ? uniqueDayCandidates.filter(
+                (candidate) =>
+                  candidate.isAnchor || categoryMatches(candidate.category, day.interests),
+              )
+            : uniqueDayCandidates;
+        if (categoryMatchedCandidates.length === 0) {
+          throw new UnprocessableEntityException({
+            code: 'CATEGORY_CANDIDATES_NOT_FOUND',
+            message: `Day ${day.dayNumber} (${dayArea})에서 요청한 장소 종류와 일치하는 네이버 후보를 찾지 못했습니다.`,
+            recovery: tripGenerationRecovery({
+              reason: 'no_candidates',
+              dayNumber: day.dayNumber,
+              area: dayArea,
+            }),
+          });
+        }
+
         const tourismByPlace = await this.tourismFeatures.forPlaces(
-          uniqueDayCandidates,
+          categoryMatchedCandidates,
           [dayArea, seoulDistrictForArea(dayArea)].filter((value): value is string =>
             Boolean(value),
           ),
           dayDate,
         );
-        const enrichedCandidates = uniqueDayCandidates.map((candidate) => ({
+        const enrichedCandidates = categoryMatchedCandidates.map((candidate) => ({
           ...candidate,
           tourism: tourismByPlace.get(candidate.placeId),
         }));
@@ -711,18 +734,8 @@ export class TripsService {
         });
         allRankings.push(ranking);
 
-        const eligibleCandidates =
-          day.interests.length > 0
-            ? ranking.candidates.filter(
-                (candidate) =>
-                  candidate.isAnchor ||
-                  candidate.scoreBreakdown.preference >= 0.5 ||
-                  ((day.mealWindows?.length ?? 0) > 0 && candidate.place.category === 'restaurant'),
-              )
-            : ranking.candidates;
-
         const cuisineFilter = filterCandidatesForMealCuisine(
-          eligibleCandidates,
+          ranking.candidates,
           day.mealWindows ?? [],
         );
         if ((day.mealWindows?.length ?? 0) > 0 && cuisineFilter.matchedRestaurantCount === 0) {
