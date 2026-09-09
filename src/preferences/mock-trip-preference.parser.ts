@@ -257,7 +257,9 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
       ...(includesAny(input.text, ['焼肉', '고기', '갈비', '맛집', '식당', '음식'])
         ? ['meat', 'food']
         : []),
-      ...(includesAny(input.text, ['公園', '공원', '서울숲', '산책']) ? ['park'] : []),
+      // A generic walk is a mobility/activity preference, not a promise that
+      // the route contains a park. Explicit park/place names remain themes.
+      ...(includesAny(input.text, ['公園', '공원', '서울숲']) ? ['park'] : []),
       ...(includesAny(input.text, [
         '博物館',
         '美術館',
@@ -631,9 +633,12 @@ export class MockTripPreferenceParser implements TripPreferenceParser {
         mealWindows,
         mustVisitPlaces,
         interests: [...new Set(dayInterests)],
-        preferences: includesAny(dayChunk, ['静か', '조용', '한옥', '분위기', '편안'])
-          ? ['quiet']
-          : [],
+        preferences: [
+          ...(includesAny(dayChunk, ['静か', '조용', '분위기', '편안']) ? ['quiet'] : []),
+          // Preserve explicit cultural category language for the final evidence gate.
+          ...(includesAny(dayChunk, ['한옥', '韓屋', 'hanok']) ? ['한옥'] : []),
+          ...(includesAny(dayChunk, ['전통', '伝統']) ? ['전통'] : []),
+        ],
         avoid: avoidTags.length > 0 ? avoidTags : ['crowded'],
         maxWalkMinutes: hasWalkingConstraint ? 7 : 15,
         anchorPlace: dayAnchor,

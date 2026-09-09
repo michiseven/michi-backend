@@ -185,6 +185,7 @@ export const ChatAnnotation = Annotation.Root({
       mutationTarget?: { stopId: string; stopOrder: number; placeName?: string };
       mealPreference?: 'local_specialty';
       requestPatch?: { relaxations: TripRelaxation[] };
+      requiresUserEdit?: boolean;
       intent?: 'trip_summary';
     }>
   >({

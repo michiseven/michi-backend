@@ -53,6 +53,17 @@ describe('PreferencesService', () => {
     expect(resultJa.preference.maxWalkMinutes).toBe(7);
   });
 
+  it('keeps a generic walk out of park themes while preserving an explicit Hanok category', async () => {
+    const walk = await service.parse({
+      text: '홍대에서 13시부터 18시까지 점심 먹고 카페와 산책하고 싶어.',
+    });
+    expect(walk.preference.interests).not.toContain('park');
+    expect(walk.preference.days?.[0]?.interests).not.toContain('park');
+
+    const hanok = await service.parse({ text: '반드시 한옥을 포함한 북촌 일정 짜줘.' });
+    expect(hanok.preference.days?.[0]?.preferences).toContain('한옥');
+  });
+
   it('preserves an exact party size and normalizes a per-person budget for ranking', async () => {
     const result = await service.parse({
       text: '성수에서 친구들과 카페 갈래',

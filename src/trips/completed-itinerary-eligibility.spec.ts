@@ -70,4 +70,51 @@ describe('completedItineraryEligibility', () => {
       }),
     ).toEqual({ eligible: true });
   });
+
+  it('does not treat a generic Hongdae walk as a required park, but keeps explicit place themes hard', () => {
+    const hongdaeLunchAndCafe = [
+      stop({
+        type: 'meal',
+        name: '홍대 점심 식당',
+        category: 'restaurant',
+        stay: 60,
+        duration: 12,
+      }),
+      stop({ name: '홍대 카페', category: 'cafe', stay: 105, duration: 18, evidence: 'mixed' }),
+      stop({
+        name: '홍대 골목 산책',
+        category: 'general',
+        stay: 90,
+        duration: 15,
+        evidence: 'measured',
+      }),
+    ];
+    expect(
+      completedItineraryEligibility({
+        startTime: '13:00',
+        endTime: '18:00',
+        requestedMeal: true,
+        requestedThemes: ['cafe', '산책'],
+        stops: hongdaeLunchAndCafe,
+      }),
+    ).toEqual({ eligible: true });
+    expect(
+      completedItineraryEligibility({
+        startTime: '13:00',
+        endTime: '18:00',
+        requestedMeal: true,
+        requestedThemes: ['공원'],
+        stops: hongdaeLunchAndCafe,
+      }),
+    ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
+    expect(
+      completedItineraryEligibility({
+        startTime: '13:00',
+        endTime: '18:00',
+        requestedMeal: true,
+        requestedThemes: ['한옥'],
+        stops: hongdaeLunchAndCafe,
+      }),
+    ).toEqual({ eligible: false, code: 'THEME_EVIDENCE_MISSING' });
+  });
 });

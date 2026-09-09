@@ -17,6 +17,12 @@ function normalized(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/\s+/gu, '');
 }
 
+/** Travel activity is not a place-category promise. Keep this defensive for
+ * legacy/live parser values while explicit park and cultural themes stay hard. */
+function isGenericWalkActivity(theme: string): boolean {
+  return /^(?:산책|도보|걷기|walk(?:ing)?|徒歩|散歩)$/iu.test(normalized(theme));
+}
+
 function themeMatchesStop(
   theme: string,
   stop: CompletionEligibilityInput['stops'][number],
@@ -31,7 +37,9 @@ function themeMatchesStop(
     [/한옥|韓屋|hanok/u, /한옥|韓屋|hanok/u],
     [/전통|伝統|역사|歴史/u, /전통|伝統|역사|歴史|궁|宮|博物|문화|文化/u],
     [/문화|文化|미술|アート|art/u, /문화|文化|미술|美術|박물|博物|gallery|art/u],
-    [/산책|散歩|공원|公園/u, /산책|散歩|공원|公園|거리|街|歩道/u],
+    [/산책|散歩/u, /산책|散歩|거리|街|歩道/u],
+    // An explicit park must be evidenced as a park; a street/walk is not a substitute.
+    [/공원|公園/u, /공원|公園/u],
     [/라이브|live|음악|音楽/u, /라이브|live|음악|音楽|공연|公演/u],
   ];
   return aliases.some(
@@ -66,9 +74,9 @@ export function completedItineraryEligibility(input: CompletionEligibilityInput)
     return { eligible: false, code: 'MEAL_EVIDENCE_MISSING' };
   }
   if (
-    input.requestedThemes.some(
-      (theme) => !input.stops.some((stop) => themeMatchesStop(theme, stop)),
-    )
+    input.requestedThemes
+      .filter((theme) => !isGenericWalkActivity(theme))
+      .some((theme) => !input.stops.some((stop) => themeMatchesStop(theme, stop)))
   ) {
     return { eligible: false, code: 'THEME_EVIDENCE_MISSING' };
   }
