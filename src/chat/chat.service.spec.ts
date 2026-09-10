@@ -166,6 +166,7 @@ describe('ChatService', () => {
       {
         message: '성수에서 카페와 저녁 식사 일정 만들어줘',
         locale: 'ko',
+        mealCuisine: 'korean',
         profile: {
           arrivalDate: '2026-09-10',
           arrivalTime: '14:30',

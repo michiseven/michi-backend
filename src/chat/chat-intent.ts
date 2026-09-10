@@ -140,6 +140,18 @@ export function delegatesMealChoice(message: string): boolean {
   );
 }
 
+export function requiresMealClarification(message: string): boolean {
+  const asksForMeal =
+    /점심|저녁|식사|맛집|ランチ|昼食|夕食|食事|グルメ|食べ|lunch|dinner|meal|food/iu.test(message);
+  if (!asksForMeal) return false;
+
+  const hasExplicitMealType =
+    /한식|일식|중식|양식|고기|韓国料理|日本料理|中華料理|洋食|焼肉|korean|japanese|chinese|western|meat/iu.test(
+      message,
+    );
+  return !hasExplicitMealType && !delegatesMealChoice(message);
+}
+
 function toClock(hour: string, minute?: string, afternoon = false): string | undefined {
   const parsedHour = Number(hour);
   const parsedMinute = minute ? Number(minute) : 0;
@@ -289,12 +301,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
     const budget = budgetMatch ? parseInt(budgetMatch[1]!, 10) * 10000 : undefined;
     // Keep an omitted area omitted. The preference parser owns product
     // defaults; chat classification must not silently turn it into 성수.
-    const needsMealChoice = /ランチ|昼食|夕食|グルメ|食べ/iu.test(trimmed);
-    const hasCuisine =
-      /한식|일식|중식|양식|고기|韓国料理|日本料理|中華料理|洋食|焼肉|korean|japanese|chinese|western/iu.test(
-        trimmed,
-      );
-    if (needsMealChoice && !hasCuisine) {
+    if (requiresMealClarification(trimmed)) {
       return {
         intent: 'clarify',
         clarificationKind: 'meal',

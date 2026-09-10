@@ -5,6 +5,7 @@ import {
   extractExplicitSeoulArea,
   extractMealCuisine,
   extractExplicitTimeWindow,
+  requiresMealClarification,
 } from '../chat-intent';
 import { classifyIntentWithLlm } from '../chat-intent-llm';
 
@@ -17,7 +18,10 @@ const MEAL_QUESTION_OPTIONS = [
   { id: 'local_specialty', mealPreference: 'local_specialty' as const },
 ];
 
-export function createClassifyIntentNode(openaiApiKey?: string) {
+export function createClassifyIntentNode(
+  openaiApiKey?: string,
+  llmClassifier: typeof classifyIntentWithLlm = classifyIntentWithLlm,
+) {
   return async (state: ChatState): Promise<ChatUpdate> => {
     // If validation node already completed response (e.g. North Korea check)
     if (state.responseMessage) {
@@ -34,7 +38,7 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
       .filter(Boolean)
       .join('\n');
     const classification =
-      (await classifyIntentWithLlm(openaiApiKey, text, hasActiveTrip, conversation)) ??
+      (await llmClassifier(openaiApiKey, text, hasActiveTrip, conversation)) ??
       classifyIntentRuleBased(text, hasActiveTrip);
     const form = state.formTripContext;
     const mod = classification.modification;
@@ -74,6 +78,14 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
       state.pendingQuestion?.target === 'meal' &&
       (Boolean(answerCuisine) || answerDelegates) &&
       classification.intent !== 'qa';
+    const hasStructuredMealChoice = Boolean(
+      state.mealCuisine || state.mealPreference || state.structuredChoice,
+    );
+    const forceMealClarification =
+      !answersPendingMeal &&
+      !hasStructuredMealChoice &&
+      requiresMealClarification(text) &&
+      classification.intent !== 'qa';
 
     // ChatService initializes this context on every request, so an ignored
     // profile cannot leak from a LangGraph checkpoint into an example request.
@@ -97,7 +109,8 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
     // so the next structured choice still has the original context.
     const deterministicTripInput = classifyIntentRuleBased(text, false).createTripInput ?? null;
     const asksForMeal =
-      classification.intent === 'clarify' && classification.clarificationKind === 'meal';
+      forceMealClarification ||
+      (classification.intent === 'clarify' && classification.clarificationKind === 'meal');
     const pendingTripInput =
       answersPendingMeal && state.pendingCreateTripInput
         ? {
@@ -169,9 +182,15 @@ export function createClassifyIntentNode(openaiApiKey?: string) {
               ? 'create_trip'
               : forcedMealCuisine
                 ? 'create_trip'
-                : classification.intent,
-      clarificationQuestion: classification.clarificationQuestion ?? null,
-      clarificationKind: classification.clarificationKind ?? null,
+                : forceMealClarification
+                  ? 'clarify'
+                  : classification.intent,
+      clarificationQuestion: forceMealClarification
+        ? null
+        : (classification.clarificationQuestion ?? null),
+      clarificationKind: forceMealClarification
+        ? 'meal'
+        : (classification.clarificationKind ?? null),
       modification,
       createTripInput,
       pendingQuestion: nextPendingQuestion,

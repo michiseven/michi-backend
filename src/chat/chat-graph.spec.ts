@@ -270,6 +270,7 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
       {
         messages: [new HumanMessage('성수에서 카페와 저녁 식사 일정 만들어줘')],
         locale: 'ko',
+        mealCuisine: 'korean',
         formTripContext: {
           arrivalDate: '2026-09-01',
           arrivalTime: '14:30',
