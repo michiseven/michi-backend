@@ -89,11 +89,18 @@ export function generatePlaceSearchQueriesByRole(
 
 @Injectable()
 export class PlaceSearchQueryGenerator {
+  // Optional keeps lightweight test doubles and older integrations source-compatible.
+  readonly generateByRole?: (
+    preference: ParsedTripPreference,
+    variationIndex?: number,
+  ) => RoleSearchQuery[];
+
+  constructor() {
+    this.generateByRole = generatePlaceSearchQueriesByRole;
+  }
+
   generate(preference: ParsedTripPreference, variationIndex = 0): string[] {
-    return [
-      ...new Set(
-        generatePlaceSearchQueriesByRole(preference, variationIndex).map((item) => item.query),
-      ),
-    ].slice(0, 5);
+    const queries = this.generateByRole?.(preference, variationIndex) ?? [];
+    return [...new Set(queries.map((item) => item.query))].slice(0, 5);
   }
 }

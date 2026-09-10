@@ -101,9 +101,9 @@ function normalizeCategory(rawCategory: string | null): string | null {
     return 'restaurant';
   const leaf = fullCategory.split('>').at(-1)?.trim() ?? '';
   if (/패션|의류|편집|쇼핑/.test(leaf)) return 'shopping';
-  if (/공원|자연/.test(leaf)) return 'park';
+  if (/공원|자연|숲/.test(leaf)) return 'park';
   if (
-    /산책로|산책길|산책명소|둘레길|하천|강변|수변|정원|가든|식물원|riverside|walking[_ -]?trail|garden|botanical/.test(
+    /산책로|산책길|산책명소|둘레길|하천|강변|수변|정원|가든|식물원|테마거리|보행자(?:거리|도로)?|거리$|riverside|walking[_ -]?trail|garden|botanical/.test(
       fullCategory,
     )
   )

@@ -52,6 +52,37 @@ describe('generationFailure', () => {
     );
   });
 
+  it('surfaces the exact missing theme role in the user-facing failure', () => {
+    const failure = generationFailure(
+      new UnprocessableEntityException({
+        code: 'THEME_EVIDENCE_MISSING',
+        recovery: {
+          reason: 'no_candidates',
+          dayNumber: 1,
+          area: '홍대',
+          stage: 'role',
+          affectedRequirement: 'theme',
+          diagnostics: { missingRole: 'stroll', missingRoles: ['stroll'] },
+          actions: [],
+        },
+        validation: {
+          publicationStatus: 'blocked',
+          requiredActivities: { status: 'fail', missing: ['stroll'] },
+          area: { status: 'pass', outsidePlaceIds: [] },
+          time: { status: 'pass', violations: [] },
+          failureCodes: ['THEME_EVIDENCE_MISSING'],
+        },
+      }),
+      'ko',
+    );
+
+    expect(failure.message).toContain('stroll');
+    expect(failure.diagnostics?.missingRole).toBe('stroll');
+    expect(failure.chips).toEqual([
+      expect.objectContaining({ label: '테마를 수정하기', requiresUserEdit: true }),
+    ]);
+  });
+
   it.each([
     'CATEGORY_CANDIDATES_NOT_FOUND',
     'NO_UNIQUE_PLACE_CANDIDATES',

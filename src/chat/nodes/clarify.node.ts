@@ -144,10 +144,12 @@ export function createClarifyNode() {
     const structuredActionChips = actionChips.map((chip) => {
       const question = state.pendingQuestion;
       if (state.clarificationKind !== 'meal' || question?.target !== 'meal') return chip;
+      const chipCuisine = 'mealCuisine' in chip ? chip.mealCuisine : undefined;
+      const chipPreference = 'mealPreference' in chip ? chip.mealPreference : undefined;
       const option = question.options.find(
         (candidate) =>
-          candidate.mealCuisine === ('mealCuisine' in chip ? chip.mealCuisine : undefined) ||
-          candidate.mealPreference === ('mealPreference' in chip ? chip.mealPreference : undefined),
+          (chipCuisine !== undefined && candidate.mealCuisine === chipCuisine) ||
+          (chipPreference !== undefined && candidate.mealPreference === chipPreference),
       );
       return option ? { ...chip, questionId: question.id, optionId: option.id } : chip;
     });

@@ -97,6 +97,7 @@ function copy(
   locale: Locale,
   code: string,
   recovery: TripGenerationRecovery | null,
+  validation: PublicationValidation | null,
 ): Omit<GenerationFailure, 'code'> {
   const ko = locale === 'ko';
   const text = (korean: string, japanese: string): string => (ko ? korean : japanese);
@@ -177,15 +178,21 @@ function copy(
         ),
         chips: recovery?.stage === 'role' ? [cuisine(), nearby()] : [cuisine(), nearby(), route()],
       };
-    case 'THEME_EVIDENCE_MISSING':
+    case 'THEME_EVIDENCE_MISSING': {
+      const missingRoles = [
+        ...(recovery?.diagnostics?.missingRole ? [recovery.diagnostics.missingRole] : []),
+        ...(validation?.requiredActivities.missing ?? []),
+      ].filter((role, index, roles) => roles.indexOf(role) === index);
+      const roleText = missingRoles.length > 0 ? ` (${missingRoles.join(', ')})` : '';
       return {
         message: text(
-          '요청한 테마를 뒷받침할 검증 장소가 없어 일정을 완성하지 않았습니다. 테마를 수정해 주세요.',
-          '指定したテーマを裏付ける確認済みスポットがないため、旅程を完成として表示しません。テーマを修正してください。',
+          `요청한 테마${roleText}를 뒷받침할 검증 장소가 없어 일정을 완성하지 않았습니다. 테마를 수정해 주세요.`,
+          `指定したテーマ${roleText}を裏付ける確認済みスポットがないため、旅程を完成として表示しません。テーマを修正してください。`,
         ),
         // A theme is an explicit user promise: never silently remove it or claim it was relaxed.
         chips: [changeTheme()],
       };
+    }
     case 'MEAL_EVIDENCE_MISSING':
       return {
         message: text(
@@ -278,6 +285,6 @@ export function generationFailure(error: unknown, locale: Locale): GenerationFai
     ...(recovery?.affectedRequirement ? { affectedRequirement: recovery.affectedRequirement } : {}),
     ...(recovery?.diagnostics ? { diagnostics: recovery.diagnostics } : {}),
     ...(validation ? { validation } : {}),
-    ...copy(locale, code, recovery),
+    ...copy(locale, code, recovery, validation),
   };
 }

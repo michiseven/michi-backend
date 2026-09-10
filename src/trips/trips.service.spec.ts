@@ -27,6 +27,7 @@ import {
   routeLegOverrides,
   completedRouteConstraintFailure,
   completedAreaConstraintFailure,
+  missingRequiredPlaceRoles,
   TripsService,
 } from './trips.service';
 import { DistanceBasedRoutingProvider } from '../routing/distance-based-routing.provider';
@@ -247,6 +248,67 @@ describe('completedRouteConstraintFailure', () => {
     ];
 
     expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
+  });
+});
+
+describe('missingRequiredPlaceRoles', () => {
+  const stop = (placeId: string): RouteStopPlan => ({
+    placeId,
+    order: 1,
+    arrivalAt: '2026-08-29T13:00:00.000Z',
+    leaveAt: '2026-08-29T14:00:00.000Z',
+    estimatedStayMinutes: 60,
+    estimatedCost: 0,
+    reason: 'test',
+    scoreBreakdown: {
+      total: 1,
+      preference: 1,
+      crowd: 1,
+      distance: 1,
+      time: 1,
+      budget: 1,
+      diversity: 1,
+      area: 1,
+    },
+    stopType: 'general',
+  });
+  const candidate = (placeId: string, category: string): RankedCandidate =>
+    ({
+      place: {
+        placeId,
+        source: 'naver',
+        sourcePlaceId: placeId,
+        name: placeId,
+        category,
+        rawCategory: category,
+        address: '서울 마포구',
+        roadAddress: null,
+        district: '마포구',
+        location: { type: 'Point', coordinates: [126.92, 37.55] },
+      },
+      estimatedCost: 0,
+      estimatedStayMinutes: 60,
+      reason: 'test',
+      scoreBreakdown: {
+        total: 1,
+        preference: 1,
+        crowd: 1,
+        distance: 1,
+        time: 1,
+        budget: 1,
+        diversity: 1,
+        area: 1,
+      },
+    }) as RankedCandidate;
+
+  it('detects a searched stroll role that the greedy route omitted', () => {
+    const candidates = [candidate('restaurant-1', 'restaurant'), candidate('stroll-1', 'stroll')];
+    expect(
+      missingRequiredPlaceRoles(['restaurant', 'stroll'], [stop('restaurant-1')], candidates),
+    ).toEqual(['stroll']);
+    expect(
+      missingRequiredPlaceRoles(['restaurant', 'stroll'], [stop('stroll-1')], candidates),
+    ).toEqual(['restaurant']);
   });
 });
 

@@ -88,6 +88,11 @@ import { LogEvent, LogField } from '@logfriends/sdk';
 import { resolveSafetyRequests, safetyWarnings } from './safety-constraints';
 import { tripGenerationRecovery } from './trip-generation-recovery';
 import { completedItineraryPublicationValidation } from './completed-itinerary-eligibility';
+import {
+  searchPlaceWithDiagnostics,
+  summarizePlaceSearchDiagnostics,
+  type PlaceSearchDiagnostics,
+} from '../providers/place/place-search-diagnostics';
 
 function matchesPlaceName(query: string, placeName: string): boolean {
   const q = query.toLowerCase().replace(/\s+/g, '');
@@ -208,6 +213,42 @@ export function completedAreaConstraintFailure(
   return outside ? 'area_constraints' : null;
 }
 
+function candidateSatisfiesRequiredRole(role: string, candidate: RankedCandidate): boolean {
+  const normalizedRole = role.normalize('NFKC').toLowerCase().replace(/\s+/gu, '');
+  const category = candidate.place.category;
+  if (/산책|散歩|stroll/u.test(normalizedRole)) {
+    return category === 'park' || category === 'stroll';
+  }
+  if (/공원|park/u.test(normalizedRole)) return category === 'park';
+  if (/카페|cafe/u.test(normalizedRole)) return category === 'cafe';
+  if (/맛집|식당|restaurant|food|meat/u.test(normalizedRole)) {
+    return category === 'restaurant';
+  }
+  return categoryMatches(category, [role]);
+}
+
+/** Required role coverage is checked against the actual route, not search count. */
+export function missingRequiredPlaceRoles(
+  interests: string[],
+  route: RouteStopPlan[],
+  candidates: RankedCandidate[],
+): string[] {
+  const candidateById = new Map(
+    candidates.map((candidate) => [candidate.place.placeId, candidate]),
+  );
+  return [
+    ...new Set(
+      interests.filter((role) => {
+        if (/^(?:도보|걷기|walk(?:ing)?|徒歩)$/iu.test(role.normalize('NFKC'))) return false;
+        return !route.some((stop) => {
+          const candidate = candidateById.get(stop.placeId);
+          return candidate ? candidateSatisfiesRequiredRole(role, candidate) : false;
+        });
+      }),
+    ),
+  ];
+}
+
 function placeMatchesDistrict(
   place: Pick<Place, 'district' | 'address' | 'roadAddress'>,
   district: string,
@@ -224,6 +265,15 @@ function providerUnavailableFailure(
   area: string,
   provider: string,
   operation: string,
+  diagnostics?: {
+    missingRoles?: string[];
+    providerFailures?: Array<{
+      role: string;
+      provider: string;
+      query: string;
+      code?: string | null;
+    }>;
+  },
 ): UnprocessableEntityException {
   return new UnprocessableEntityException({
     code: 'PLACE_PROVIDER_UNAVAILABLE',
@@ -234,7 +284,7 @@ function providerUnavailableFailure(
       area,
       stage: 'candidate',
       affectedRequirement: 'candidate',
-      diagnostics: { provider, operation },
+      diagnostics: { provider, operation, ...diagnostics },
     }),
   });
 }
@@ -530,6 +580,7 @@ export class TripsService {
         number,
         { valid: boolean; outsidePlaceIds: string[] }
       >();
+      const placeSearchDiagnosticsByDay = new Map<number, PlaceSearchDiagnostics>();
 
       for (const day of tripDays) {
         const dayArea = day.area ?? area;
@@ -556,17 +607,56 @@ export class TripsService {
         };
 
         const queries = this.queryGenerator.generate(dayPreference, Math.max(day.dayNumber - 1, 0));
+        // Keep the role attached to every query so a missing stroll/cafe/etc.
+        // can be diagnosed after cross-query deduplication. Test doubles that
+        // only implement the legacy string API still work via the role fallback.
+        const queryGeneratorWithRoles = this.queryGenerator as PlaceSearchQueryGenerator & {
+          generateByRole?: (
+            preference: ParsedTripPreference,
+            variationIndex?: number,
+          ) => Array<{ role: string; query: string; variationIndex: number }>;
+        };
+        const roleQueries =
+          typeof queryGeneratorWithRoles.generateByRole === 'function'
+            ? queryGeneratorWithRoles.generateByRole(dayPreference, Math.max(day.dayNumber - 1, 0))
+            : queries.map((query, index) => ({
+                role: day.interests[index] ?? 'candidate',
+                query,
+                variationIndex: Math.max(day.dayNumber - 1, 0),
+              }));
         const nearestCrowdArea = await this.spatialAreas.nearestCrowdArea(dayArea);
-        const placeResponsesPromise = Promise.all(
-          queries.map((query) => this.placeProvider.search({ query, area: dayArea, limit: 15 })),
-        ).catch(() => {
+        const placeSearchAttempts = await Promise.all(
+          roleQueries.map(({ role, query }) =>
+            searchPlaceWithDiagnostics(
+              this.placeProvider,
+              { query, area: dayArea, limit: 15 },
+              role,
+            ),
+          ),
+        );
+        const placeSearchDiagnostics: PlaceSearchDiagnostics = summarizePlaceSearchDiagnostics(
+          placeSearchAttempts,
+          [...new Set(roleQueries.map(({ role }) => role))],
+        );
+        placeSearchDiagnosticsByDay.set(day.dayNumber, placeSearchDiagnostics);
+        const providerFailures = placeSearchDiagnostics.providerFailures.map((attempt) => ({
+          role: attempt.role,
+          provider: attempt.provider,
+          query: attempt.query,
+          code: attempt.providerError?.code ?? null,
+        }));
+        if (providerFailures.length > 0) {
           throw providerUnavailableFailure(
             day.dayNumber,
             dayArea,
             this.placeProvider.name,
             '장소 검색',
+            {
+              missingRoles: placeSearchDiagnostics.missingRoles,
+              providerFailures,
+            },
           );
-        });
+        }
         const crowdPromise = this.crowdProvider
           .getAreaCrowd(nearestCrowdArea?.areaName ?? dayArea)
           .catch(() => {
@@ -585,14 +675,10 @@ export class TripsService {
           .catch(() => {
             throw providerUnavailableFailure(day.dayNumber, dayArea, 'kto', '관광 후보 검색');
           });
-        const [placeResponses, crowd, ktoCandidates] = await Promise.all([
-          placeResponsesPromise,
-          crowdPromise,
-          ktoCandidatesPromise,
-        ]);
+        const [crowd, ktoCandidates] = await Promise.all([crowdPromise, ktoCandidatesPromise]);
 
-        const records = placeResponses
-          .flatMap((response) => response.places)
+        const records = placeSearchAttempts
+          .flatMap((attempt) => attempt.records ?? [])
           .filter(
             (record, index, all) =>
               !isNorthKoreaRelated(record.name) &&
@@ -937,6 +1023,13 @@ export class TripsService {
                 fetched: uniqueDayCandidates.length,
                 eligible: categoryMatchedCandidates.length,
                 excludedByRole: uniqueDayCandidates.length,
+                missingRoles: placeSearchDiagnostics.missingRoles,
+                providerFailures: placeSearchDiagnostics.providerFailures.map((attempt) => ({
+                  role: attempt.role,
+                  provider: attempt.provider,
+                  query: attempt.query,
+                  code: attempt.providerError?.code ?? null,
+                })),
               },
             }),
           });
@@ -1032,6 +1125,35 @@ export class TripsService {
         };
         let routeCandidates = dayCandidates;
         let route = this.routeOptimizer.optimize(routeInput);
+
+        // The greedy optimizer may prefer a high-scoring café/meal pair and
+        // leave a lower-scoring explicit role (notably stroll) out. If an
+        // eligible role candidate exists, append the missing candidate and
+        // re-run the same constraints in the current route order before the
+        // publication gate gets a chance to block an otherwise repairable day.
+        for (const missingRole of missingRequiredPlaceRoles(
+          day.interests,
+          route,
+          routeCandidates,
+        )) {
+          const candidate = routeCandidates.find(
+            (item) =>
+              !route.some((stop) => stop.placeId === item.place.placeId) &&
+              candidateSatisfiesRequiredRole(missingRole, item),
+          );
+          if (!candidate) continue;
+          const orderedCandidates = route.flatMap((stop) => {
+            const existing = routeCandidates.find((item) => item.place.placeId === stop.placeId);
+            return existing ? [existing] : [];
+          });
+          orderedCandidates.push(candidate);
+          const repairedRoute = this.routeOptimizer.optimize({
+            ...routeInput,
+            candidates: orderedCandidates,
+            preserveOrder: true,
+          });
+          if (repairedRoute.length === orderedCandidates.length) route = repairedRoute;
+        }
 
         if (route.length === 0) {
           throw new UnprocessableEntityException({
@@ -1361,6 +1483,7 @@ export class TripsService {
         });
         if (publicationValidation.publicationStatus !== 'ready') {
           const failureCode = publicationValidation.failureCodes[0] ?? 'ROUTE_CONSTRAINTS_VIOLATED';
+          const searchDiagnostics = placeSearchDiagnosticsByDay.get(day.dayNumber);
           throw new UnprocessableEntityException({
             code: failureCode,
             message: 'The generated itinerary does not satisfy the completed-result evidence gate.',
@@ -1382,6 +1505,21 @@ export class TripsService {
                 failureCode === 'THEME_EVIDENCE_MISSING'
                   ? 'theme'
                   : (publicationValidation.requiredActivities.missing[0] ?? 'route'),
+              diagnostics: {
+                missingRole: publicationValidation.requiredActivities.missing[0],
+                missingRoles: [
+                  ...new Set([
+                    ...publicationValidation.requiredActivities.missing,
+                    ...(searchDiagnostics?.missingRoles ?? []),
+                  ]),
+                ],
+                providerFailures: (searchDiagnostics?.providerFailures ?? []).map((attempt) => ({
+                  role: attempt.role,
+                  provider: attempt.provider,
+                  query: attempt.query,
+                  code: attempt.providerError?.code ?? null,
+                })),
+              },
             }),
           });
         }

@@ -13,6 +13,17 @@ export interface TripGenerationFailureDiagnostics {
   excludedByRole?: number;
   provider?: string;
   operation?: string;
+  /** Exact required role that failed (for example `stroll`), when known. */
+  missingRole?: string;
+  /** All roles without an eligible provider candidate at search time. */
+  missingRoles?: string[];
+  /** Provider failures are retained separately from ordinary no-match roles. */
+  providerFailures?: Array<{
+    role: string;
+    provider: string;
+    query: string;
+    code?: string | null;
+  }>;
 }
 
 export interface TripGenerationRecoveryAction {

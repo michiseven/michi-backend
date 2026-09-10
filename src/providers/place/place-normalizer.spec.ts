@@ -87,6 +87,9 @@ describe('NAVER place normalization', () => {
     ['여행>명소>산책로', 'stroll'],
     ['여행>명소>하천변', 'stroll'],
     ['여행>명소>정원', 'stroll'],
+    ['여행>명소>테마거리', 'stroll'],
+    ['여행>명소>보행자거리', 'stroll'],
+    ['여행>명소>숲', 'park'],
     ['여행>명소>공원', 'park'],
   ])('normalizes the complete NAVER category hierarchy %s as %s', (category, expected) => {
     const record = normalizeNaverLocalItem({
