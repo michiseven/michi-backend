@@ -87,7 +87,10 @@ import type { LocalizedPlaceDescription } from '../place-details/place-descripti
 import { LogEvent, LogField } from '@logfriends/sdk';
 import { resolveSafetyRequests, safetyWarnings } from './safety-constraints';
 import { tripGenerationRecovery } from './trip-generation-recovery';
-import { completedItineraryPublicationValidation } from './completed-itinerary-eligibility';
+import {
+  completedItineraryPublicationValidation,
+  isPublicationPolicyOnlyToken,
+} from './completed-itinerary-eligibility';
 import {
   searchPlaceWithDiagnostics,
   summarizePlaceSearchDiagnostics,
@@ -1457,7 +1460,9 @@ export class TripsService {
           (stop) => seoulDateString(stop.arrivalAt) === (day.date ?? travelDate),
         );
         const requestedThemes = [...day.interests, ...day.preferences].filter(
-          (value) => !/^(여행|관광|맛집|グルメ|旅行)$/iu.test(value.trim()),
+          (value) =>
+            !/^(여행|관광|맛집|グルメ|旅行)$/iu.test(value.trim()) &&
+            !isPublicationPolicyOnlyToken(value),
         );
         const publicationValidation = completedItineraryPublicationValidation({
           startTime: day.startTime,

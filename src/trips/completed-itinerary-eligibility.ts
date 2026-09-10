@@ -45,6 +45,15 @@ function isGenericWalkActivity(theme: string): boolean {
   return /^(?:도보|걷기|walk(?:ing)?|徒歩)$/iu.test(normalized(theme));
 }
 
+/** Preference-policy markers are not place themes and must not become hard evidence promises. */
+export function isPublicationPolicyOnlyToken(value: string): boolean {
+  return /^local(?:[_ -]?specialty)?$/iu.test(normalized(value));
+}
+
+function isRequiredTheme(theme: string): boolean {
+  return !isGenericWalkActivity(theme) && !isPublicationPolicyOnlyToken(theme);
+}
+
 function themeMatchesStop(
   theme: string,
   stop: CompletionEligibilityInput['stops'][number],
@@ -82,7 +91,7 @@ function missingRequiredActivities(input: CompletionEligibilityInput): string[] 
   if (input.requestedMeal && !input.stops.some((stop) => stop.stopType === 'meal')) {
     missing.push('meal');
   }
-  for (const theme of input.requestedThemes.filter((value) => !isGenericWalkActivity(value))) {
+  for (const theme of input.requestedThemes.filter(isRequiredTheme)) {
     if (!input.stops.some((stop) => themeMatchesStop(theme, stop))) missing.push(theme);
   }
   return missing;
@@ -157,7 +166,7 @@ export function completedItineraryEligibility(input: CompletionEligibilityInput)
   }
   if (
     input.requestedThemes
-      .filter((theme) => !isGenericWalkActivity(theme))
+      .filter(isRequiredTheme)
       .some((theme) => !input.stops.some((stop) => themeMatchesStop(theme, stop)))
   ) {
     return { eligible: false, code: 'THEME_EVIDENCE_MISSING' };

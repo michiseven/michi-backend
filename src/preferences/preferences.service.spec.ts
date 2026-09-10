@@ -98,6 +98,19 @@ describe('PreferencesService', () => {
     ]);
   });
 
+  it('keeps local specialty meal delegation out of required interests', async () => {
+    const result = await service.parse({
+      text: '홍대에서 13시부터 18시까지 점심 먹고 카페와 산책하고 싶어.',
+      mealPreference: 'local_specialty',
+    });
+    const day = result.preference.days?.[0];
+
+    expect(result.preference.interests).not.toContain('local');
+    expect(day?.interests).toEqual(expect.arrayContaining(['cafe', 'stroll', 'restaurant']));
+    expect(day?.interests).not.toContain('local');
+    expect(day?.mealWindows?.[0]?.cuisinePreferences).toEqual([]);
+  });
+
   it('preserves an exact party size and normalizes a per-person budget for ranking', async () => {
     const result = await service.parse({
       text: '성수에서 친구들과 카페 갈래',

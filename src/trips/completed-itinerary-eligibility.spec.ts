@@ -1,6 +1,7 @@
 import {
   completedItineraryPublicationValidation,
   completedItineraryEligibility,
+  isPublicationPolicyOnlyToken,
   type CompletionEligibilityInput,
 } from './completed-itinerary-eligibility';
 
@@ -27,6 +28,28 @@ const stop = (
 });
 
 describe('completedItineraryEligibility', () => {
+  it('does not treat local meal policy markers as required place themes', () => {
+    expect(isPublicationPolicyOnlyToken('local')).toBe(true);
+    expect(isPublicationPolicyOnlyToken('local_specialty')).toBe(true);
+    expect(isPublicationPolicyOnlyToken('stroll')).toBe(false);
+
+    const validation = completedItineraryPublicationValidation({
+      startTime: '13:00',
+      endTime: '18:00',
+      requestedMeal: true,
+      requestedThemes: ['cafe', 'local'],
+      stops: [
+        stop({ type: 'meal', category: 'restaurant', stay: 60 }),
+        stop({ category: 'cafe', stay: 120 }),
+      ],
+      area: { valid: true },
+      time: { valid: true },
+    });
+
+    expect(validation.publicationStatus).toBe('ready');
+    expect(validation.requiredActivities).toEqual({ status: 'pass', missing: [] });
+  });
+
   it('counts only measured or mixed inbound-route evidence toward 4–6 hour coverage', () => {
     expect(
       completedItineraryEligibility({
