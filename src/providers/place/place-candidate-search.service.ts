@@ -33,6 +33,13 @@ export class PlaceCandidateSearchService {
   ) {}
 
   async searchKtoCandidates(request: PlaceCandidateSearchRequest): Promise<Place[]> {
+    return this.searchStoredCandidates(request, KTO_PLACE_SOURCE);
+  }
+
+  async searchStoredCandidates(
+    request: PlaceCandidateSearchRequest,
+    source?: string,
+  ): Promise<Place[]> {
     const limit = Math.min(Math.max(request.limit ?? 40, 1), 100);
     const spatialArea = (await this.spatialAreas?.administrativeArea(request.area)) ?? null;
     const center = spatialArea ? null : knownSeoulSearchArea(request.area);
@@ -47,7 +54,10 @@ export class PlaceCandidateSearchService {
     ];
     const query = this.places
       .createQueryBuilder('place')
-      .where('place.source = :source', { source: KTO_PLACE_SOURCE })
+      .where(source ? 'place.source = :source' : 'place.source IN (:...sources)', {
+        source,
+        sources: ['naver-local', 'kakao-local', KTO_PLACE_SOURCE],
+      })
       .andWhere('place.location IS NOT NULL')
       .andWhere(
         "NOT (place.name ILIKE '%DMZ%' OR place.name ILIKE '%판문점%' OR place.name ILIKE '%통일전망대%' OR place.name ILIKE '%제1땅굴%' OR place.name ILIKE '%제2땅굴%' OR place.name ILIKE '%제3땅굴%' OR place.name ILIKE '%제4땅굴%' OR place.name ILIKE '%도라산%' OR place.name ILIKE '%임진각%' OR place.name ILIKE '%탈북%' OR (place.name ILIKE '%북한%' AND place.name NOT ILIKE '%북한산%'))",

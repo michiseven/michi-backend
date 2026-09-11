@@ -1,8 +1,10 @@
 import type { TripsService } from '../../trips/trips.service';
+import { Logger } from '@nestjs/common';
 import type { ChatState, ChatUpdate } from '../chat-state';
 import { generationFailure } from '../generation-failure';
 
 export function createCreateTripNode(tripsService: TripsService) {
+  const logger = new Logger('CreateTripNode');
   return async (state: ChatState): Promise<ChatUpdate> => {
     const input = state.createTripInput;
     const isKo = state.locale === 'ko';
@@ -145,6 +147,9 @@ export function createCreateTripNode(tripsService: TripsService) {
         status: 'completed',
       };
     } catch (err) {
+      logger.warn(
+        `Trip generation failed in chat: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+      );
       const failure = generationFailure(err, state.locale);
       return {
         responseMessage: failure.message,

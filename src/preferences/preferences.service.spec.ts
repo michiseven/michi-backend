@@ -98,6 +98,23 @@ describe('PreferencesService', () => {
     ]);
   });
 
+  it('treats a cafe-dessert clarification as the meal role instead of requiring a restaurant too', async () => {
+    const result = await service.parse({
+      text: '홍대에서 친구 3명과 토요일 13~18시에 카페와 저녁을 즐기고 싶어요.',
+      mealCuisine: 'cafe_dessert',
+    });
+    const day = result.preference.days?.[0];
+
+    expect(day?.mealWindows).toEqual([
+      expect.objectContaining({
+        mealType: 'dinner',
+        cuisinePreferences: ['카페디저트'],
+      }),
+    ]);
+    expect(day?.interests).toContain('cafe');
+    expect(day?.interests).not.toContain('restaurant');
+  });
+
   it('keeps local specialty meal delegation out of required interests', async () => {
     const result = await service.parse({
       text: '홍대에서 13시부터 18시까지 점심 먹고 카페와 산책하고 싶어.',
@@ -109,6 +126,132 @@ describe('PreferencesService', () => {
     expect(day?.interests).toEqual(expect.arrayContaining(['cafe', 'stroll', 'restaurant']));
     expect(day?.interests).not.toContain('local');
     expect(day?.mealWindows?.[0]?.cuisinePreferences).toEqual([]);
+  });
+
+  it('repairs an inferred default window that would otherwise exclude an explicit dinner', async () => {
+    const parser: TripPreferenceParser = {
+      parse: jest.fn().mockResolvedValue({
+        parserMode: 'live',
+        warnings: [],
+        preference: {
+          tripTitle: '연남동 저녁',
+          startDate: '2026-09-11',
+          endDate: '2026-09-11',
+          totalDays: 1,
+          totalBudgetKrw: 60_000,
+          partySize: 1,
+          area: '연남동',
+          startTime: '13:00',
+          endTime: '17:00',
+          budget: 60_000,
+          companions: 'solo',
+          pace: 'balanced',
+          baseCamp: null,
+          mobilityConstraint: null,
+          userPriorities: [],
+          rainFallbackPolicy: null,
+          interests: ['restaurant'],
+          preferences: ['local'],
+          avoid: [],
+          maxWalkMinutes: null,
+          anchorPlace: null,
+          days: [
+            {
+              dayNumber: 1,
+              date: '2026-09-11',
+              title: '연남동 저녁',
+              area: '연남동',
+              startTime: '13:00',
+              endTime: '17:00',
+              interests: ['restaurant'],
+              preferences: ['local'],
+              avoid: [],
+              dailyBudgetKrw: 60_000,
+              startAnchor: null,
+              endAnchor: null,
+              fixedAppointments: [],
+              mustVisitPlaces: [],
+              maxWalkMinutes: null,
+              anchorPlace: null,
+              mealWindows: [
+                {
+                  mealType: 'dinner',
+                  targetTime: '18:30',
+                  durationMinutes: 60,
+                  cuisinePreferences: [],
+                  area: null,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    };
+    const liveService = new PreferencesService(parser, schema);
+
+    const result = await liveService.parse({ text: '延南洞でローカルらしい夕食を食べたい。' });
+
+    expect(result.preference.days?.[0]?.endTime).toBe('20:30');
+  });
+
+  it('keeps user-stated visitable themes when a live parser only returns broad categories', async () => {
+    const parser: TripPreferenceParser = {
+      parse: jest.fn().mockResolvedValue({
+        parserMode: 'live',
+        warnings: [],
+        preference: {
+          tripTitle: '서촌 여행',
+          startDate: '2026-09-11',
+          endDate: '2026-09-11',
+          totalDays: 1,
+          totalBudgetKrw: 60_000,
+          partySize: 1,
+          area: '서촌',
+          startTime: '13:00',
+          endTime: '17:00',
+          budget: 60_000,
+          companions: 'solo',
+          pace: 'balanced',
+          baseCamp: null,
+          mobilityConstraint: null,
+          userPriorities: [],
+          rainFallbackPolicy: null,
+          interests: ['cafe'],
+          preferences: [],
+          avoid: [],
+          maxWalkMinutes: null,
+          anchorPlace: null,
+          days: [
+            {
+              dayNumber: 1,
+              date: '2026-09-11',
+              title: '서촌 여행',
+              area: '서촌',
+              startTime: '13:00',
+              endTime: '17:00',
+              interests: ['cafe'],
+              preferences: [],
+              avoid: [],
+              dailyBudgetKrw: 60_000,
+              startAnchor: null,
+              endAnchor: null,
+              fixedAppointments: [],
+              mealWindows: [],
+              mustVisitPlaces: [],
+              maxWalkMinutes: null,
+              anchorPlace: null,
+            },
+          ],
+        },
+      }),
+    };
+    const liveService = new PreferencesService(parser, schema);
+
+    const result = await liveService.parse({ text: '西村で韓屋カフェと伝統工芸を見たい。' });
+
+    expect(result.preference.days?.[0]?.preferences).toEqual(
+      expect.arrayContaining(['한옥', '전통']),
+    );
   });
 
   it('preserves an exact party size and normalizes a per-person budget for ranking', async () => {

@@ -39,6 +39,8 @@ export function extractExplicitSeoulArea(message: string): string | undefined {
   const aliases = [
     ['성수동', '성수'],
     ['弘大', '홍대'],
+    ['合井', '합정'],
+    ['新村', '신촌'],
     ['홍익대', '홍대'],
     ['聖水', '성수'],
     ['江南', '강남'],
@@ -273,7 +275,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
 
   // 3. Check for vague prompt
   const isVague =
-    /^(서울\s*여행(\s*추천(해줘)?)?|서울\s*추천|추천해줘|어디\s*가지|놀러가|뭐하지|추천|소개해줘|おすすめ|ソウル旅行|どこ行けばいい|プラン作って|案内して|遊びに行きたい)$/i.test(
+    /^(서울\s*여행(\s*추천(해줘)?)?|서울\s*추천|추천해줘|어디\s*가지|놀러가|뭐하지|추천|소개해줘|おすすめ|ソウル旅行|どこ行けばいい|プラン作って|案内して|遊びに行きたい|友達と週末にソウルで遊びたい)[。！!]?$/i.test(
       trimmed,
     ) ||
     (!/(성수|명동|홍대|강남|을지로|동대문|잠실|여의도|안국|서촌|북촌|이태원|한남|聖水|明洞|弘大|江南|乙支路)/.test(

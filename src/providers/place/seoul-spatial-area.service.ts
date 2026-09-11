@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Place, SeoulSpatialArea } from '../../database/entities';
+import { knownSeoulSearchArea } from './seoul-area-centers';
 
 export interface ResolvedSeoulArea {
   id: string;
@@ -79,6 +80,38 @@ export class SeoulSpatialAreaService {
       : null;
   }
 
+  /** Validate coordinates before persistence, including provider results without DB IDs. */
+  async filterCandidateCoordinates(
+    areaName: string,
+    places: Place[],
+  ): Promise<SpatialPlaceFilterResult> {
+    const area = await this.administrativeArea(areaName);
+    const center = area ? null : knownSeoulSearchArea(areaName);
+    if (!area && !center) return { places: [], applied: false, expanded: false };
+    const points = places
+      .filter((p) => p.location)
+      .map((p) => ({
+        id: p.id,
+        longitude: p.location!.coordinates[0],
+        latitude: p.location!.coordinates[1],
+      }));
+    const rows = await this.areas.query<Array<{ id: string }>>(
+      `WITH points AS (
+        SELECT id, ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geometry
+        FROM jsonb_to_recordset($1::jsonb) AS p(id text, longitude float8, latitude float8)
+      ) SELECT p.id FROM points p WHERE ${
+        area
+          ? 'EXISTS (SELECT 1 FROM seoul_spatial_areas a WHERE a.id = $2::uuid AND ST_Covers(a.geometry, p.geometry))'
+          : 'ST_DWithin(p.geometry::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4)'
+      }`,
+      area
+        ? [JSON.stringify(points), area.id]
+        : [JSON.stringify(points), center!.longitude, center!.latitude, center!.radiusMeters],
+    );
+    const ids = new Set(rows.map((row) => row.id));
+    return { places: places.filter((p) => ids.has(p.id)), applied: true, expanded: false };
+  }
+
   async filterPlaces(
     areaName: string,
     places: Place[],
@@ -86,8 +119,32 @@ export class SeoulSpatialAreaService {
     minimumInside = 5,
   ): Promise<SpatialPlaceFilterResult> {
     const requested = await this.administrativeArea(areaName);
-    if (!requested || places.length === 0) {
+    const center = requested ? null : knownSeoulSearchArea(areaName);
+    if ((!requested && !center) || places.length === 0) {
       return { places, applied: false, expanded: false };
+    }
+    // Some commonly requested neighbourhoods are commercial areas rather than
+    // administrative dongs.  Their verified centre is still a strict spatial
+    // boundary; never fall back to an all-Seoul candidate pool in that case.
+    if (!requested && center) {
+      const rows = await this.areas.query<{ id: string }[]>(
+        `SELECT place.id
+         FROM places place
+         WHERE place.id = ANY($1::uuid[])
+           AND place.location IS NOT NULL
+           AND ST_DWithin(
+             place.location,
+             ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+             $4
+           )`,
+        [places.map((place) => place.id), center.longitude, center.latitude, center.radiusMeters],
+      );
+      const ids = new Set(rows.map((row) => row.id));
+      return {
+        places: places.filter((place) => ids.has(place.id)),
+        applied: true,
+        expanded: false,
+      };
     }
     const rows = await this.areas.query<
       { id: string; inside: boolean; distance: number | string }[]
@@ -103,7 +160,7 @@ export class SeoulSpatialAreaService {
           AND ST_DWithin(place.location, area.geometry::geography, $3)
         ORDER BY inside DESC, distance ASC, place.id ASC
       `,
-      [requested.id, places.map((place) => place.id), expansionMeters],
+      [requested!.id, places.map((place) => place.id), expansionMeters],
     );
     const insideIds = new Set(rows.filter((row) => row.inside).map((row) => row.id));
     const useExpansion = insideIds.size < minimumInside;

@@ -3,9 +3,12 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
+  Optional,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ITINERARY_PLACE_PROVIDER } from '../providers/place/place-provider';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -90,6 +93,8 @@ import { tripGenerationRecovery } from './trip-generation-recovery';
 import {
   completedItineraryPublicationValidation,
   isPublicationPolicyOnlyToken,
+  publicationThemeFromPreference,
+  themeMatchesStop,
 } from './completed-itinerary-eligibility';
 import {
   searchPlaceWithDiagnostics,
@@ -220,7 +225,14 @@ function candidateSatisfiesRequiredRole(role: string, candidate: RankedCandidate
   const normalizedRole = role.normalize('NFKC').toLowerCase().replace(/\s+/gu, '');
   const category = candidate.place.category;
   if (/산책|散歩|stroll/u.test(normalizedRole)) {
-    return category === 'park' || category === 'stroll';
+    return (
+      category === 'park' ||
+      category === 'stroll' ||
+      ((category === 'attraction' || category === 'culture') &&
+        /한옥마을|韓屋村|역사문화|전통마을|관광.*명소/iu.test(
+          `${candidate.place.name} ${candidate.place.rawCategory ?? ''}`,
+        ))
+    );
   }
   if (/공원|park/u.test(normalizedRole)) return category === 'park';
   if (/카페|cafe/u.test(normalizedRole)) return category === 'cafe';
@@ -228,6 +240,33 @@ function candidateSatisfiesRequiredRole(role: string, candidate: RankedCandidate
     return category === 'restaurant';
   }
   return categoryMatches(category, [role]);
+}
+
+/** A preference can be an exact evidence promise ("hanok") while provider
+ * categories remain broad (culture). Use this only for candidate/route
+ * coverage; the publication gate still verifies the original exact theme. */
+function candidateRolesForDay(day: Pick<DayTripPreference, 'interests' | 'preferences'>): string[] {
+  return [
+    ...new Set(
+      [...day.interests, ...day.preferences.map(publicationThemeFromPreference)]
+        .filter((value): value is string => Boolean(value))
+        .map((role) => {
+          if (role === '한옥') return 'attraction';
+          if (role === '전통') return 'culture';
+          return role;
+        }),
+    ),
+  ];
+}
+
+function candidateSatisfiesTheme(theme: string, candidate: RankedCandidate): boolean {
+  return themeMatchesStop(theme, {
+    stopType: 'general',
+    estimatedStayMinutes: candidate.estimatedStayMinutes,
+    name: candidate.place.name,
+    category: candidate.place.category,
+    rawCategory: candidate.place.rawCategory,
+  });
 }
 
 /** Required role coverage is checked against the actual route, not search count. */
@@ -402,6 +441,7 @@ function isAirportPlace(place: Pick<Place, 'source' | 'category' | 'name'>): boo
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
   constructor(
     @InjectRepository(Trip) private readonly trips: Repository<Trip>,
     @InjectRepository(TripPreference)
@@ -431,6 +471,9 @@ export class TripsService {
     @Inject(ITINERARY_EXPLANATION_PROVIDER)
     private readonly explanationProvider: ItineraryExplanationProvider,
     private readonly placeDescriptionTranslations?: PlaceDescriptionTranslationService,
+    @Optional()
+    @Inject(ITINERARY_PLACE_PROVIDER)
+    private readonly itineraryPlaceProvider?: PlaceProvider,
   ) {}
 
   @LogEvent({
@@ -466,7 +509,12 @@ export class TripsService {
     incomingEditToken?: string,
   ): Promise<TripApiResponse> {
     const parsed = await this.preferences.parse(dto);
-    const relaxations = new Set(dto.relaxations ?? []);
+    // Discovery radius and route optimization are implementation parameters,
+    // not promises the traveller explicitly chose. Start with the resilient
+    // range/route policy so ordinary requests do not fail just because the
+    // first small-radius candidate set cannot form a route. Semantic choices
+    // such as cuisine and explicit visitable themes remain strict.
+    const relaxations = new Set(['search_radius', 'route_constraints', ...(dto.relaxations ?? [])]);
     const explicitlyRequestedArea = dto.startArea?.trim() || null;
     // A classifier/parser may carry an inferred day area alongside the user's
     // explicit `startArea`. For a single-day request the explicit value is the
@@ -631,8 +679,8 @@ export class TripsService {
         const placeSearchAttempts = await Promise.all(
           roleQueries.map(({ role, query }) =>
             searchPlaceWithDiagnostics(
-              this.placeProvider,
-              { query, area: dayArea, limit: 15 },
+              this.itineraryPlaceProvider ?? this.placeProvider,
+              { query, area: dayArea, limit: 15, role },
               role,
             ),
           ),
@@ -1005,14 +1053,29 @@ export class TripsService {
         // Area matching is performed by the spatial filter above. A requested
         // category is a hard candidate contract, not merely a ranking bonus.
         // Anchors remain because the user explicitly fixed them.
+        const dayCandidateRoles = candidateRolesForDay(day);
         const categoryMatchedCandidates =
-          day.interests.length > 0
+          dayCandidateRoles.length > 0
             ? uniqueDayCandidates.filter(
                 (candidate) =>
-                  candidate.isAnchor || categoryMatches(candidate.category, day.interests),
+                  candidate.isAnchor || categoryMatches(candidate.category, dayCandidateRoles),
               )
             : uniqueDayCandidates;
         if (categoryMatchedCandidates.length === 0) {
+          this.logger.warn({
+            event: 'category_candidates_not_found',
+            dayNumber: day.dayNumber,
+            area: dayArea,
+            requestedRoles: dayCandidateRoles,
+            searchQueries: roleQueries.map(({ role, query }) => ({ role, query })),
+            candidateCount: uniqueDayCandidates.length,
+            candidates: uniqueDayCandidates.map((candidate) => ({
+              name: candidate.name,
+              category: candidate.category,
+              district: candidate.district,
+            })),
+            missingRoles: placeSearchDiagnostics.missingRoles,
+          });
           throw new UnprocessableEntityException({
             code: 'CATEGORY_CANDIDATES_NOT_FOUND',
             message: `Day ${day.dayNumber} (${dayArea})에서 요청한 장소 종류와 일치하는 네이버 후보를 찾지 못했습니다.`,
@@ -1097,11 +1160,27 @@ export class TripsService {
             !candidate.fixedAppointment &&
             candidate.anchorRole === 'destination',
         );
-        const dayCandidates = relaxations.has('meal_cuisine')
+        const explicitVenueThemes = day.interests.filter((interest) =>
+          /^(?:live|bar)$/iu.test(interest),
+        );
+        const venueCandidates = ranking.candidates.filter((candidate) =>
+          explicitVenueThemes.some((theme) => candidateSatisfiesTheme(theme, candidate)),
+        );
+        const cuisineCandidates = relaxations.has('meal_cuisine')
           ? ranking.candidates
           : cuisineFilter.candidates.length > 0
             ? cuisineFilter.candidates
             : ranking.candidates;
+        // Keep activity venues even when their provider category is broadly
+        // "restaurant" and their menu does not match the requested meal.
+        const dayCandidates = [
+          ...new Map(
+            [...cuisineCandidates, ...venueCandidates].map((candidate) => [
+              candidate.place.placeId,
+              candidate,
+            ]),
+          ).values(),
+        ];
         const routeInput = {
           travelDate: dayDate,
           startTime: day.startTime,
@@ -1135,7 +1214,7 @@ export class TripsService {
         // re-run the same constraints in the current route order before the
         // publication gate gets a chance to block an otherwise repairable day.
         for (const missingRole of missingRequiredPlaceRoles(
-          day.interests,
+          dayCandidateRoles,
           route,
           routeCandidates,
         )) {
@@ -1143,6 +1222,73 @@ export class TripsService {
             (item) =>
               !route.some((stop) => stop.placeId === item.place.placeId) &&
               candidateSatisfiesRequiredRole(missingRole, item),
+          );
+          if (!candidate) continue;
+          const orderedCandidates = route.flatMap((stop) => {
+            const existing = routeCandidates.find((item) => item.place.placeId === stop.placeId);
+            return existing ? [existing] : [];
+          });
+          orderedCandidates.push(candidate);
+          const repairedRoute = this.routeOptimizer.optimize({
+            ...routeInput,
+            candidates: orderedCandidates,
+            preserveOrder: true,
+          });
+          if (repairedRoute.length === orderedCandidates.length) {
+            route = repairedRoute;
+            continue;
+          }
+
+          // The first greedy pass may already fill the requested window with
+          // optional candidates. In that case replace an optional stop rather
+          // than appending the explicit theme after the window has ended.
+          const replacementIndex = orderedCandidates.findLastIndex((item) => {
+            if (item.place.category === 'restaurant' && (day.mealWindows?.length ?? 0) > 0) {
+              return false;
+            }
+            // Replacing a broad category match with a candidate that carries
+            // the exact requested evidence is safe even when both share the
+            // same category (e.g. a generic attraction → Han River night view).
+            return true;
+          });
+          if (replacementIndex < 0) continue;
+          const replacementCandidates = [...orderedCandidates];
+          replacementCandidates[replacementIndex] = candidate;
+          const replacementRoute = this.routeOptimizer.optimize({
+            ...routeInput,
+            candidates: replacementCandidates,
+            preserveOrder: true,
+          });
+          if (replacementRoute.length === replacementCandidates.length) route = replacementRoute;
+        }
+
+        // Category coverage alone is not proof of an exact requested theme.
+        // Add a Naver-backed candidate that carries the required evidence
+        // (hanok, night view, photo/stroll, etc.) before the final publication
+        // check, rather than letting the generic rank order silently omit it.
+        const requestedThemes = [
+          ...day.interests,
+          ...day.preferences
+            .map(publicationThemeFromPreference)
+            .filter((theme): theme is string => theme !== null),
+        ].filter(
+          (theme) =>
+            !isPublicationPolicyOnlyToken(theme) &&
+            !/^(?:restaurant|food|meat|맛집|식당|음식|고기|한식|일식|중식|양식)$/iu.test(theme),
+        );
+        for (const theme of requestedThemes) {
+          if (
+            route.some((stop) => {
+              const current = routeCandidates.find((item) => item.place.placeId === stop.placeId);
+              return current ? candidateSatisfiesTheme(theme, current) : false;
+            })
+          ) {
+            continue;
+          }
+          const candidate = routeCandidates.find(
+            (item) =>
+              !route.some((stop) => stop.placeId === item.place.placeId) &&
+              candidateSatisfiesTheme(theme, item),
           );
           if (!candidate) continue;
           const orderedCandidates = route.flatMap((stop) => {
@@ -1244,17 +1390,46 @@ export class TripsService {
 
         const evidenceOverrides = routeLegOverrides(route, legEvidence.routes);
         if (Object.keys(evidenceOverrides).length > 0) {
-          const orderedCandidates = route.flatMap((stop) => {
+          let orderedCandidates = route.flatMap((stop) => {
             const candidate = routeCandidates.find((item) => item.place.placeId === stop.placeId);
             return candidate ? [candidate] : [];
           });
-          const measuredRoute = this.routeOptimizer.optimize({
+          let measuredRoute = this.routeOptimizer.optimize({
             ...routeInput,
             candidates: orderedCandidates,
             preserveOrder: true,
             legEstimates: evidenceOverrides,
           });
-          if (measuredRoute.length !== route.length) {
+
+          // Search ranking uses fast planning estimates. When provider-backed
+          // legs are longer, retain the user's meal and every explicit role,
+          // then remove only surplus general candidates until the measured
+          // route fits. Failing the whole planner because an optional stop no
+          // longer fits is worse than returning the smaller truthful route.
+          while (measuredRoute.length !== orderedCandidates.length) {
+            const removableIndex = orderedCandidates.findLastIndex((candidate) => {
+              const withoutCandidate = orderedCandidates.filter((item) => item !== candidate);
+              const stillHasMeal =
+                (day.mealWindows?.length ?? 0) === 0 ||
+                withoutCandidate.some((item) => item.place.category === 'restaurant');
+              const retainsRoles = day.interests.every((role) => {
+                if (/^(?:도보|걷기|walk(?:ing)?|徒歩)$/iu.test(role.normalize('NFKC'))) {
+                  return true;
+                }
+                return withoutCandidate.some((item) => candidateSatisfiesRequiredRole(role, item));
+              });
+              return stillHasMeal && retainsRoles;
+            });
+            if (removableIndex < 0) break;
+            orderedCandidates = orderedCandidates.filter((_, index) => index !== removableIndex);
+            measuredRoute = this.routeOptimizer.optimize({
+              ...routeInput,
+              candidates: orderedCandidates,
+              preserveOrder: true,
+              legEstimates: evidenceOverrides,
+            });
+          }
+          if (measuredRoute.length !== orderedCandidates.length) {
             throw new UnprocessableEntityException({
               code: 'ROUTE_EVIDENCE_INFEASIBLE',
               message: `Day ${day.dayNumber} (${dayArea})의 공식 이동시간을 반영하면 요청 시간 안에 일정을 완료할 수 없습니다.`,
@@ -1268,6 +1443,9 @@ export class TripsService {
             });
           }
           route = measuredRoute;
+          routeCandidates = routeCandidates.filter((candidate) =>
+            orderedCandidates.some((item) => item.place.placeId === candidate.place.placeId),
+          );
         }
 
         const originalDay = originalDayContracts.find((item) => item.dayNumber === day.dayNumber);
@@ -1459,9 +1637,20 @@ export class TripsService {
         const dayStops = allSavedStops.filter(
           (stop) => seoulDateString(stop.arrivalAt) === (day.date ?? travelDate),
         );
-        const requestedThemes = [...day.interests, ...day.preferences].filter(
+        const requestedThemes = [
+          ...day.interests,
+          ...day.preferences
+            .map(publicationThemeFromPreference)
+            .filter((value): value is string => value !== null),
+        ].filter(
           (value) =>
             !/^(여행|관광|맛집|グルメ|旅行)$/iu.test(value.trim()) &&
+            // Cuisine/meal roles are verified by the meal stop and the
+            // cuisine gate above. They are not an independent sightseeing
+            // theme that would require a second "meat" attraction.
+            !/^(?:restaurant|food|meat|맛집|식당|음식|고기|한식|일식|중식|양식)$/iu.test(
+              value.trim(),
+            ) &&
             !isPublicationPolicyOnlyToken(value),
         );
         const publicationValidation = completedItineraryPublicationValidation({
@@ -1489,6 +1678,18 @@ export class TripsService {
         if (publicationValidation.publicationStatus !== 'ready') {
           const failureCode = publicationValidation.failureCodes[0] ?? 'ROUTE_CONSTRAINTS_VIOLATED';
           const searchDiagnostics = placeSearchDiagnosticsByDay.get(day.dayNumber);
+          this.logger.warn({
+            event: 'itinerary_publication_blocked',
+            dayNumber: day.dayNumber,
+            requestedThemes,
+            missingThemes: publicationValidation.requiredActivities.missing,
+            selectedPlaces: dayStops.map((stop) => allCandidatesMap.get(stop.placeId)?.name),
+            candidateCount: allRankings
+              .flatMap((ranking) => ranking.candidates)
+              .filter(
+                (candidate) => candidate.place.district === seoulDistrictForArea(day.area ?? area),
+              ).length,
+          });
           throw new UnprocessableEntityException({
             code: failureCode,
             message: 'The generated itinerary does not satisfy the completed-result evidence gate.',

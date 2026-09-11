@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { DbFirstPlaceProvider } from './place/db-first-place.provider';
+import { ITINERARY_PLACE_PROVIDER } from './place/place-provider';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TtlCache } from '../common/cache/ttl-cache';
@@ -28,6 +30,17 @@ import { PLACE_PROVIDER, type PlaceProvider } from './place/place-provider';
     KtoPlaceProvider,
     KtoSeoulSyncService,
     PlaceCandidateSearchService,
+    DbFirstPlaceProvider,
+    {
+      provide: ITINERARY_PLACE_PROVIDER,
+      inject: [ConfigService, DbFirstPlaceProvider, MockPlaceProvider],
+      useFactory: (
+        config: ConfigService,
+        live: DbFirstPlaceProvider,
+        mock: MockPlaceProvider,
+      ): PlaceProvider =>
+        config.getOrThrow<'mock' | 'live'>('PLACE_PROVIDER_MODE') === 'mock' ? mock : live,
+    },
     PlaceDeduplicator,
     SeoulSpatialAreaService,
     SeoulCrowdProvider,
@@ -59,6 +72,7 @@ import { PLACE_PROVIDER, type PlaceProvider } from './place/place-provider';
     },
   ],
   exports: [
+    ITINERARY_PLACE_PROVIDER,
     PLACE_PROVIDER,
     CROWD_PROVIDER,
     PlaceNormalizer,

@@ -34,6 +34,11 @@ function normalizedInterest(value: string): string {
   if (/카페|cafe|coffee|喫茶/u.test(tag)) return 'cafe';
   if (/편집|독립 상점|상점|쇼핑|shop|select/u.test(tag)) return 'shopping';
   if (/미술|박물|전시|gallery|museum|ギャラリー/u.test(tag)) return 'culture';
+  if (/한옥|韓屋|hanok|전통|伝統|역사|歴史/u.test(tag)) return 'culture';
+  if (/사진|写真|photo|撮影/u.test(tag)) return 'photography';
+  if (/야경|夜景|night\s*view/u.test(tag)) return 'night_view';
+  if (/라이브|live|음악|音楽/u.test(tag)) return 'live';
+  if (/바|bar|バー|펍|pub|칵테일/u.test(tag)) return 'bar';
   if (/공원|숲|park|forest/u.test(tag)) return 'park';
   if (
     /산책|散歩|stroll|walking[_ ]?trail|riverside|하천|강변|정원|식물원|garden|botanical/u.test(tag)
@@ -78,6 +83,15 @@ function sameAreaName(value: string, area: string): boolean {
   }
 }
 
+function isGenericAreaHotelAnchor(
+  anchor: { name: string } | null | undefined,
+  area: string,
+): boolean {
+  if (!anchor || !/호텔|hotel|ホテル|숙소|宿/u.test(anchor.name)) return false;
+  const withoutHotel = anchor.name.replace(/호텔|hotel|ホテル|숙소|宿/giu, '').trim();
+  return withoutHotel.length === 0 || sameAreaName(withoutHotel, area);
+}
+
 function explicitMealWindows(text: string): MealWindowPreference[] {
   const windows: MealWindowPreference[] = [];
   const cuisinePreferences = /한식|韓国料理|韓国食/iu.test(text)
@@ -109,7 +123,61 @@ function explicitMealWindows(text: string): MealWindowPreference[] {
 function normalizedCuisine(value: string): string {
   if (/한식|한국.*요리|한국.*料理|韓国料理|韓国食|korean/iu.test(value)) return '한식';
   if (/고기|焼肉|meat/iu.test(value)) return '고기';
+  if (/일식|일본.*요리|日本料理|和食|japanese/iu.test(value)) return '일식';
+  if (/중식|중국.*요리|中国料理|chinese/iu.test(value)) return '중식';
+  if (/양식|서양.*요리|洋食|western/iu.test(value)) return '양식';
+  if (/카페.*디저트|cafe.*dessert|カフェ.*スイーツ/iu.test(value)) return '카페디저트';
   return value;
+}
+
+function minutesAt(time: string): number {
+  const [hour = 0, minute = 0] = time.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function hasExplicitTimeRange(text: string): boolean {
+  return /(?:\d{1,2}\s*(?:시|時)|\d{1,2}:\d{2})\s*(?:~|〜|[-–])\s*(?:\d{1,2}\s*(?:시|時)|\d{1,2}:\d{2})/u.test(
+    text,
+  );
+}
+
+/**
+ * The LLM sometimes leaves its generic 13:00–17:00 default in place while
+ * also extracting an explicit dinner at 18:30. That is an internally
+ * impossible contract, not a user choice. Only when the user did not state a
+ * time range do we extend that inferred end time to include the promised meal.
+ */
+function endTimeCoveringMeals(
+  currentEndTime: string,
+  meals: readonly MealWindowPreference[],
+  input: PreferenceParseInput,
+): string {
+  if (input.endTime || hasExplicitTimeRange(input.text)) return currentEndTime;
+  const latestMealEnd = Math.max(
+    ...meals.map((meal) => minutesAt(meal.targetTime) + meal.durationMinutes),
+    0,
+  );
+  if (minutesAt(currentEndTime) >= latestMealEnd) return currentEndTime;
+  // A dinner needs time to finish and should not be clipped at its target.
+  if (latestMealEnd >= 18 * 60) {
+    return /라이브|live|음악|音楽|바|bar|バー|펍|pub|칵테일/iu.test(input.text) ? '23:00' : '20:30';
+  }
+  return currentEndTime;
+}
+
+/** Preserve visitable themes stated in the user's own text even if a live
+ * parser returns a broad category only. These are later searched and verified;
+ * operational preferences (quiet, stroller, rain) deliberately stay absent. */
+function explicitVisitablePreferences(text: string): string[] {
+  const tags: string[] = [];
+  if (/한옥|韓屋|hanok/iu.test(text)) tags.push('한옥');
+  if (/전통|伝統|역사|歴史/iu.test(text)) tags.push('전통');
+  if (/야경|夜景|night\s*view/iu.test(text)) tags.push('night_view');
+  if (/사진|写真|photo|撮影/iu.test(text)) tags.push('photography');
+  if (/산책|散歩|stroll/iu.test(text)) tags.push('stroll');
+  if (/라이브|live|음악|音楽/iu.test(text)) tags.push('live');
+  if (/쇼핑|shopping|買い物|雑貨/iu.test(text)) tags.push('shopping');
+  return tags;
 }
 
 function selectedCuisine(value: MealCuisine): string {
@@ -272,6 +340,7 @@ export class PreferencesService {
         }
         return meal;
       });
+      const reconciledEndTime = endTimeCoveringMeals(dayEndTime, mergedMealWindows, input);
       const dayAnchorPlace = existing?.anchorPlace ?? (dayNum === 1 ? rawPref.anchorPlace : null);
       synchronizedDays.push({
         dayNumber: dayNum,
@@ -279,18 +348,23 @@ export class PreferencesService {
         title: existing?.title ?? `Day ${dayNum}: ${existing?.area ?? resolvedArea} 여행`,
         area: existing?.area ? normalizeSeoulArea(existing.area) : resolvedArea,
         startTime: dayStartTime,
-        endTime: dayEndTime,
+        endTime: reconciledEndTime,
         dailyBudgetKrw: existing?.dailyBudgetKrw ?? dailyBudget,
         startAnchor:
           existing?.startAnchor ??
           (rawRecord.startAnchor as never) ??
           firstSourceDay?.startAnchor ??
           null,
-        endAnchor:
-          existing?.endAnchor ??
-          (rawRecord.endAnchor as never) ??
-          firstSourceDay?.endAnchor ??
-          null,
+        endAnchor: ((): DayTripPreference['endAnchor'] => {
+          const anchor =
+            existing?.endAnchor ??
+            (rawRecord.endAnchor as never) ??
+            firstSourceDay?.endAnchor ??
+            null;
+          return isGenericAreaHotelAnchor(anchor, existing?.area ?? resolvedArea ?? '서울')
+            ? null
+            : anchor;
+        })(),
         fixedAppointments: fixedAppointmentsWithDefaults(sourceFixedAppointments, input.text),
         mealWindows: mergedMealWindows,
         mustVisitPlaces:
@@ -298,15 +372,24 @@ export class PreferencesService {
           (dayNum === 1 ? (firstSourceDay?.mustVisitPlaces ?? []) : []),
         interests: [
           ...new Set([
-            ...normalizedRawInterests,
+            // A cuisine clarification is authoritative for a meal window. In
+            // particular, 카페·디저트 is a valid meal choice in this product;
+            // keeping the parser's generic restaurant role here would require
+            // both a cafe and a restaurant for one selected meal.
+            ...(input.mealCuisine === 'cafe_dessert'
+              ? normalizedRawInterests.filter((interest) => interest !== 'restaurant')
+              : normalizedRawInterests),
             ...(input.mealCuisine === 'cafe_dessert' ? ['cafe'] : []),
-            ...(mergedMealWindows.length > 0 ? ['restaurant'] : []),
+            ...(mergedMealWindows.some((meal) => !meal.cuisinePreferences?.includes('카페디저트'))
+              ? ['restaurant']
+              : []),
           ]),
         ],
         preferences: [
           ...new Set([
             ...rawPreferences,
             ...inferredPreferenceTags(rawInterests),
+            ...explicitVisitablePreferences(input.text),
             ...(input.mealPreference === 'local_specialty' ? ['local'] : []),
           ]),
         ],

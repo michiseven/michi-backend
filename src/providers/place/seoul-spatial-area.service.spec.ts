@@ -115,4 +115,31 @@ describe('SeoulSpatialAreaService', () => {
     expect(result.expanded).toBe(true);
     expect(result.places).toHaveLength(3);
   });
+
+  it('uses the verified commercial-area centre when no administrative dong exists', async () => {
+    const builder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+    } as unknown as SelectQueryBuilder<SeoulSpatialArea>;
+    const query = jest.fn().mockResolvedValue([{ id: 'p1' }]);
+    const areaRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(builder),
+      query,
+    } as unknown as Repository<SeoulSpatialArea>;
+
+    const result = await new SeoulSpatialAreaService(areaRepo).filterPlaces('합정', [
+      { id: 'p1' },
+      { id: 'p2' },
+    ] as Place[]);
+
+    expect(result).toEqual({ places: [{ id: 'p1' }], applied: true, expanded: false });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('ST_DWithin'), [
+      ['p1', 'p2'],
+      126.9138,
+      37.5496,
+      2500,
+    ]);
+  });
 });

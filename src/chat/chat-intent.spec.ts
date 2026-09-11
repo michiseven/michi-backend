@@ -15,12 +15,19 @@ describe('classifyIntentRuleBased', () => {
     });
   });
 
+  it('asks for a direction when a first-time visitor gives no usable itinerary detail', () => {
+    expect(classifyIntentRuleBased('友達と週末にソウルで遊びたい', false)).toMatchObject({
+      intent: 'clarify',
+    });
+  });
+
   it('extracts the user-written area for precedence over an inferred LLM area', () => {
     expect(extractExplicitSeoulArea('홍대에서 13시부터 18시까지 카페와 산책을 하고 싶어요')).toBe(
       '홍대',
     );
     expect(extractExplicitSeoulArea('성수 말고 홍대에서 카페를 즐기고 싶어요')).toBe('홍대');
     expect(extractExplicitSeoulArea('성수와 홍대에서 카페를 즐기고 싶어요')).toBe('홍대');
+    expect(extractExplicitSeoulArea('合井でライブ音楽を楽しみたい')).toBe('합정');
     expect(extractExplicitSeoulArea('午後にカフェと散歩を楽しみたい')).toBeUndefined();
   });
 });

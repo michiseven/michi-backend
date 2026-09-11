@@ -106,4 +106,24 @@ describe('PlaceSearchQueryGenerator', () => {
       '산책로',
     ]);
   });
+
+  it('turns explicit visitable preferences into provider queries instead of only ranking hints', () => {
+    const preference = {
+      area: '서촌',
+      startTime: '13:00',
+      endTime: '17:00',
+      budget: 60_000,
+      companions: 'solo',
+      pace: 'balanced',
+      interests: ['cafe'],
+      preferences: ['한옥', '전통'],
+      avoid: [],
+    } satisfies ParsedTripPreference;
+
+    expect(generatePlaceSearchQueriesByRole(preference)).toEqual([
+      { role: 'cafe', query: '카페', variationIndex: 0 },
+      { role: 'attraction', query: '한옥', variationIndex: 0 },
+      { role: 'culture', query: '전통 공예', variationIndex: 0 },
+    ]);
+  });
 });

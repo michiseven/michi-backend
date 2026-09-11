@@ -39,11 +39,15 @@ const CATEGORY_ALIASES: Readonly<Record<string, readonly string[]>> = {
   park: ['park'],
   // A generic stroll is its own activity role; park is an acceptable place
   // type for it, but an explicit park request does not accept stroll-only sites.
-  stroll: STROLL_ACCEPTED_PLACE_CATEGORIES,
+  // The final evidence gate still requires a walkable place signal. Include
+  // heritage attractions here so they can compete for a requested stroll.
+  stroll: [...STROLL_ACCEPTED_PLACE_CATEGORIES, 'attraction', 'culture'],
   culture: ['culture'],
   night_view: ['park', 'culture', 'attraction'],
   photography: ['park', 'culture', 'attraction'],
   photo: ['park', 'culture', 'attraction'],
+  live: ['culture', 'leisure', 'restaurant'],
+  bar: ['restaurant'],
   landmark: ['culture', 'attraction', 'park'],
   attraction: ['attraction', 'culture', 'park'],
   sightseeing: ['culture', 'attraction', 'park'],

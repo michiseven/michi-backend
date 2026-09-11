@@ -2,6 +2,7 @@ import {
   completedItineraryPublicationValidation,
   completedItineraryEligibility,
   isPublicationPolicyOnlyToken,
+  publicationThemeFromPreference,
   type CompletionEligibilityInput,
 } from './completed-itinerary-eligibility';
 
@@ -28,6 +29,17 @@ const stop = (
 });
 
 describe('completedItineraryEligibility', () => {
+  it('keeps operational preferences out of required place evidence while preserving visitable themes', () => {
+    expect(publicationThemeFromPreference('quiet')).toBeNull();
+    expect(publicationThemeFromPreference('子ども連れ')).toBeNull();
+    expect(publicationThemeFromPreference('歩きすぎない')).toBeNull();
+    expect(publicationThemeFromPreference('사진 촬영')).toBe('photography');
+    expect(publicationThemeFromPreference('벚꽃 피크닉')).toBe('park');
+    expect(publicationThemeFromPreference('韓屋')).toBe('한옥');
+    expect(isPublicationPolicyOnlyToken('실내')).toBe(true);
+    expect(isPublicationPolicyOnlyToken('유모차 이동 편리')).toBe(true);
+  });
+
   it('does not treat local meal policy markers as required place themes', () => {
     expect(isPublicationPolicyOnlyToken('local')).toBe(true);
     expect(isPublicationPolicyOnlyToken('local_specialty')).toBe(true);
@@ -91,6 +103,15 @@ describe('completedItineraryEligibility', () => {
           stop({ type: 'meal', category: 'restaurant' }),
           stop({ name: '북촌 한옥마을', rawCategory: '전통 문화 관광지' }),
         ],
+      }),
+    ).toEqual({ eligible: true });
+    expect(
+      completedItineraryEligibility({
+        startTime: '10:00',
+        endTime: '11:00',
+        requestedMeal: false,
+        requestedThemes: ['stroll'],
+        stops: [stop({ name: '北村八景（북촌 8경）', category: 'attraction' })],
       }),
     ).toEqual({ eligible: true });
   });

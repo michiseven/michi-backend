@@ -171,6 +171,18 @@ function determineStopType(candidate: RankedCandidate, input: OptimizeRouteInput
   ) {
     return 'basecamp';
   }
+  const venueEvidence = `${candidate.place.name} ${candidate.place.rawCategory ?? ''}`;
+  // Bars and live-music venues are often returned as the broad restaurant
+  // category by Local Search. They are an activity after dinner, not another
+  // meal window.
+  if (
+    candidate.place.category === 'restaurant' &&
+    /라이브|live|음악|音楽|공연|公演|재즈|jazz|클럽|club|바\s*\(?bar\)?|칵테일|cocktail|술집|주점|pub|wine/iu.test(
+      venueEvidence,
+    )
+  ) {
+    return 'general';
+  }
   if (candidate.place.category === 'restaurant') {
     return 'meal';
   }
@@ -442,7 +454,7 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
       knownCost += next.candidate.estimatedCost ?? 0;
       cursor = next.leave;
       previous = next.candidate;
-      if (next.candidate.place.category === 'restaurant') scheduledRestaurantCount += 1;
+      if (toPlan(next, route.length + 1, input).stopType === 'meal') scheduledRestaurantCount += 1;
       if (next.candidate.place.category) usedCategories.add(next.candidate.place.category);
       const scheduledBrand = extractBrandKey(next.candidate.place);
       if (scheduledBrand) usedBrands.add(scheduledBrand);

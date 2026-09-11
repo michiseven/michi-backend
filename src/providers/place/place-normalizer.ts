@@ -108,7 +108,8 @@ function normalizeCategory(rawCategory: string | null): string | null {
     )
   )
     return 'stroll';
-  if (/미술관|박물관|전시/.test(leaf)) return 'culture';
+  if (/미술관|박물관|전시|갤러리|화랑|공방|공예|문화|체험/.test(leaf)) return 'culture';
+  if (/관광.*명소|명소|유적|궁/.test(leaf)) return 'attraction';
   return leaf.length > 0 ? leaf : null;
 }
 

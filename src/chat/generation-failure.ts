@@ -30,7 +30,9 @@ type FailureChip = GenerationFailure['chips'][number];
 
 function exceptionCode(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
-  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  const response =
+    (error as { getResponse?: () => unknown }).getResponse?.() ??
+    (error as { response?: unknown }).response;
   if (response && typeof response === 'object' && 'code' in response) {
     return typeof (response as { code?: unknown }).code === 'string'
       ? (response as { code: string }).code
@@ -43,7 +45,9 @@ function exceptionCode(error: unknown): string | null {
 
 function exceptionRecovery(error: unknown): TripGenerationRecovery | null {
   if (!error || typeof error !== 'object') return null;
-  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  const response =
+    (error as { getResponse?: () => unknown }).getResponse?.() ??
+    (error as { response?: unknown }).response;
   if (!response || typeof response !== 'object') return null;
   const recovery = (response as { recovery?: unknown }).recovery;
   if (!recovery || typeof recovery !== 'object') return null;
@@ -52,7 +56,9 @@ function exceptionRecovery(error: unknown): TripGenerationRecovery | null {
 
 function exceptionValidation(error: unknown): PublicationValidation | null {
   if (!error || typeof error !== 'object') return null;
-  const response = (error as { getResponse?: () => unknown }).getResponse?.();
+  const response =
+    (error as { getResponse?: () => unknown }).getResponse?.() ??
+    (error as { response?: unknown }).response;
   if (!response || typeof response !== 'object') return null;
   const validation = (response as { validation?: unknown }).validation;
   return validation && typeof validation === 'object'

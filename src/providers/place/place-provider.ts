@@ -1,11 +1,13 @@
 import type { ProviderMode } from '../../common/config/env.validation';
 
 export const PLACE_PROVIDER = Symbol('PLACE_PROVIDER');
+export const ITINERARY_PLACE_PROVIDER = Symbol('ITINERARY_PLACE_PROVIDER');
 
 export interface PlaceSearchRequest {
   query: string;
   area: string;
   limit?: number;
+  role?: string;
 }
 
 export interface ProviderPlaceRecord {

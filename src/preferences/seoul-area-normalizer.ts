@@ -4,6 +4,8 @@ const SEOUL_AREA_ALIASES: Readonly<Record<string, string>> = {
   聖水: '성수',
   성수동: '성수',
   弘大: '홍대',
+  合井: '합정',
+  新村: '신촌',
   홍익대: '홍대',
   江南: '강남',
   明洞: '명동',

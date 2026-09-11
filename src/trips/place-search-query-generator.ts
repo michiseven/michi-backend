@@ -35,6 +35,21 @@ const SEARCH_TERM_VARIANTS: Readonly<Record<string, readonly string[]>> = {
   attraction: ['관광 명소', '역사 명소', '문화 명소'],
   sightseeing: ['관광 명소', '역사 명소', '문화 명소'],
   leisure: ['놀거리', '체험', '문화 체험'],
+  night_view: ['야경 명소', '전망대', '야경 산책'],
+  photography: ['사진 명소', '포토 스팟', '전망 명소'],
+  photo: ['사진 명소', '포토 스팟', '전망 명소'],
+  live: ['라이브 음악', '공연장', '재즈 바'],
+  bar: ['칵테일 바', '재즈 바', '와인 바'],
+};
+
+const PREFERENCE_SEARCHES: Readonly<Record<string, { role: string; query: string }>> = {
+  한옥: { role: 'attraction', query: '한옥' },
+  전통: { role: 'culture', query: '전통 공예' },
+  night_view: { role: 'night_view', query: '야경 명소' },
+  photography: { role: 'photography', query: '사진 명소' },
+  stroll: { role: 'stroll', query: '산책로' },
+  live: { role: 'live', query: '라이브 음악' },
+  shopping: { role: 'shopping', query: '소품샵' },
 };
 
 export interface RoleSearchQuery {
@@ -70,6 +85,10 @@ export function generatePlaceSearchQueriesByRole(
     const variants = SEARCH_TERM_VARIANTS[interest];
     const query = variants?.[variationIndex % variants.length] ?? SEARCH_TERMS[interest];
     if (query) queries.push({ role: interest, query, variationIndex });
+  }
+  for (const preferenceTag of preference.preferences) {
+    const search = PREFERENCE_SEARCHES[preferenceTag];
+    if (search) queries.push({ ...search, variationIndex });
   }
   if (queries.length === 0) {
     return [

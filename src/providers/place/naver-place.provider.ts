@@ -32,11 +32,14 @@ export class NaverPlaceProvider implements PlaceProvider {
     url.searchParams.set('sort', 'comment');
 
     let response: Response;
+    const ncp = url.hostname === 'naverapihub.apigw.ntruss.com';
     try {
       response = await fetch(url, {
         headers: {
-          'X-NCP-APIGW-API-KEY-ID': this.config.getOrThrow<string>('NAVER_CLIENT_ID'),
-          'X-NCP-APIGW-API-KEY': this.config.getOrThrow<string>('NAVER_CLIENT_SECRET'),
+          [ncp ? 'X-NCP-APIGW-API-KEY-ID' : 'X-Naver-Client-Id']:
+            this.config.getOrThrow<string>('NAVER_CLIENT_ID'),
+          [ncp ? 'X-NCP-APIGW-API-KEY' : 'X-Naver-Client-Secret']:
+            this.config.getOrThrow<string>('NAVER_CLIENT_SECRET'),
         },
         signal: AbortSignal.timeout(5_000),
       });
