@@ -101,6 +101,8 @@ export type RequiredActivityCategory =
 export interface OptimizeRouteInput {
   /** Explicit minimum visits, counted by actual verified place category, not role labels. */
   requiredActivityCounts?: Partial<Record<RequiredActivityCategory, number>>;
+  /** Plan toward a trip-wide quota without making this day its hard deadline. */
+  priorityActivityCounts?: Partial<Record<RequiredActivityCategory, number>>;
   travelDate: string;
   startTime: string;
   endTime: string;

@@ -401,9 +401,12 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
       )
         return 2;
       const category = resolveVerifiedPlaceCategory(scheduled.candidate.place);
-      const required =
+      const required = Math.max(
         Object.entries(input.requiredActivityCounts ?? {}).find(([key]) => key === category)?.[1] ??
-        0;
+          0,
+        Object.entries(input.priorityActivityCounts ?? {}).find(([key]) => key === category)?.[1] ??
+          0,
+      );
       return category && (scheduledActivityCounts.get(category) ?? 0) < required ? 1 : 0;
     };
 

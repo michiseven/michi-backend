@@ -1,4 +1,5 @@
 import { UnprocessableEntityException } from '@nestjs/common';
+import { TripStop as TripStopEntity } from '../database/entities';
 import type { Repository } from 'typeorm';
 import type {
   ExternalDataSnapshot,
@@ -1275,6 +1276,169 @@ describe('TripsService atomic stop editing', () => {
       }),
     );
   });
+
+  it.each(['recalculate', 'remove', 'cross-day-reorder'])(
+    'preserves daily edit boundaries and validates atomically for %s',
+    async (action) => {
+      const stops = [1, 2, 3, 4].map((order) => ({
+        id: `stop-${order}`,
+        order,
+        placeId: `p-${order}`,
+        place: {
+          id: `p-${order}`,
+          source: 'kto',
+          name: `카페 ${order}`,
+          category: 'cafe',
+          location: { type: 'Point', coordinates: [127.05, 37.54] },
+        },
+        arrivalAt: new Date(`2026-10-0${order <= 2 ? 3 : 4}T01:00:00Z`),
+        leaveAt: new Date(`2026-10-0${order <= 2 ? 3 : 4}T02:00:00Z`),
+        estimatedCost: null,
+        estimatedStayMinutes: 60,
+        reason: 'fixture',
+        scoreBreakdown: { total: 1 },
+      }));
+      const trip = {
+        id: 'multi-edit',
+        editToken: 'multi-token',
+        travelDate: '2026-10-03',
+        startTime: '10:00',
+        endTime: '18:00',
+        budgetKrw: null,
+        preference: {
+          validatedJson: {
+            days: [
+              {
+                dayNumber: 1,
+                date: '2026-10-03',
+                startTime: '10:00',
+                endTime: '18:00',
+                dailyBudgetKrw: 10000,
+              },
+              {
+                dayNumber: 2,
+                date: '2026-10-04',
+                startTime: '11:00',
+                endTime: '17:00',
+                dailyBudgetKrw: 20000,
+              },
+            ],
+            explicitRequestContract: { dailyActivityCounts: { cafe: 2 } },
+          },
+        },
+        stops,
+      };
+      const update = jest.fn().mockResolvedValue({});
+      const transaction = jest.fn(async (callback: (manager: unknown) => Promise<void>) =>
+        callback({
+          delete: jest.fn(),
+          update,
+          createQueryBuilder: () => ({
+            update: jest.fn().mockReturnThis(),
+            set: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            execute: jest.fn(),
+          }),
+        }),
+      );
+      const optimizer = {
+        optimize: jest.fn((input: OptimizeRouteInput): RouteStopPlan[] =>
+          input.candidates
+            .map((candidate, index) => ({
+              ...candidate,
+              placeId: candidate.place.placeId,
+              order: index + 1,
+              arrivalAt: new Date(`${input.travelDate}T${input.startTime}:00+09:00`).toISOString(),
+              leaveAt: new Date(
+                new Date(`${input.travelDate}T${input.startTime}:00+09:00`).getTime() + 60 * 60000,
+              ).toISOString(),
+              // Distinct contiguous hours keep this deterministic alternate optimizer valid.
+            }))
+            .map((plan, index) => ({
+              ...plan,
+              arrivalAt: new Date(
+                new Date(plan.arrivalAt).getTime() + index * 60 * 60000,
+              ).toISOString(),
+              leaveAt: new Date(
+                new Date(plan.leaveAt).getTime() + index * 60 * 60000,
+              ).toISOString(),
+            })),
+        ),
+      };
+      const service = new TripsService(
+        { findOne: jest.fn().mockResolvedValue(trip) } as never,
+        {} as never,
+        {} as never,
+        { manager: { transaction } } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        optimizer,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      const evidence = jest
+        .spyOn(
+          service as unknown as {
+            collectLegEvidence: (...args: unknown[]) => Promise<unknown>;
+          },
+          'collectLegEvidence',
+        )
+        .mockResolvedValue({ routes: [], accessibility: [], warnings: [] });
+      jest
+        .spyOn(service as unknown as { responseFor: () => Promise<unknown> }, 'responseFor')
+        .mockResolvedValue({});
+      if (action === 'recalculate') {
+        await service.patchStops(trip.id, { action: 'recalculate' }, trip.editToken);
+        expect(optimizer.optimize).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            travelDate: '2026-10-04',
+            startTime: '11:00',
+            endTime: '17:00',
+            budget: 20000,
+            requiredActivityCounts: { cafe: 2 },
+          }),
+        );
+        expect(evidence).toHaveBeenCalledTimes(2);
+        const writes = update.mock.calls
+          .filter(([entity]) => entity === TripStopEntity)
+          .map(([, , values]) => values as { order: number; arrivalAt: Date });
+        expect(writes.map((values) => values.order)).toEqual([1, 2, 3, 4]);
+        expect(writes.map((values) => values.arrivalAt.toISOString().slice(0, 10))).toEqual([
+          '2026-10-03',
+          '2026-10-03',
+          '2026-10-04',
+          '2026-10-04',
+        ]);
+        expect(transaction).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(
+          service.patchStops(
+            trip.id,
+            action === 'remove'
+              ? { action: 'remove', stopId: 'stop-4' }
+              : { action: 'reorder', stopIds: ['stop-1', 'stop-3', 'stop-2', 'stop-4'] },
+            trip.editToken,
+          ),
+        ).rejects.toThrow();
+        expect(transaction).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('supports action replace in patchStops to swap a place', async () => {
     const existingTrip = {

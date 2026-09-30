@@ -77,6 +77,26 @@ function seoulTime(iso: string): string {
 describe('HeuristicRouteOptimizer', () => {
   const optimizer = new HeuristicRouteOptimizer();
 
+  it('plans toward a trip-wide quota without forcing it all into the first day', () => {
+    const firstCafe = candidate('first-day-cafe', 'cafe', 126.924, 37.557);
+    const firstRoute = optimizer.optimize(
+      input([firstCafe], {
+        endTime: '14:00',
+        priorityActivityCounts: { cafe: 2 },
+      }),
+    );
+    expect(firstRoute.map((stop) => stop.placeId)).toEqual(['first-day-cafe']);
+    const secondCafe = candidate('second-day-cafe', 'cafe', 126.925, 37.558);
+    const secondRoute = optimizer.optimize(
+      input([secondCafe], {
+        travelDate: '2026-08-20',
+        endTime: '14:00',
+        requiredActivityCounts: { cafe: 1 },
+      }),
+    );
+    expect(secondRoute.map((stop) => stop.placeId)).toEqual(['second-day-cafe']);
+  });
+
   it('honors two requested cafe visits before optional high-score diversity stops in a three-hour window', () => {
     const options = [
       candidate('hongdae-cafe-a', 'cafe', 126.924, 37.557, {

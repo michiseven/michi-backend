@@ -36,6 +36,11 @@ import {
   extractExplicitRequestContract,
   assessExplicitRequestContract,
 } from '../preferences/explicit-request-contract';
+import {
+  mergeActivityCounts,
+  missingActivityCounts,
+  requiredActivityCountsForDay,
+} from '../preferences/activity-count-contract';
 import { PLACE_PROVIDER, type PlaceProvider } from '../providers/place/place-provider';
 import { PlaceCandidateSearchService } from '../providers/place/place-candidate-search.service';
 import { PlaceDeduplicator } from '../providers/place/place-deduplicator';
@@ -548,6 +553,16 @@ export class TripsService {
       dto.startArea?.trim() && parsedTripDays.length === 1
         ? parsedTripDays.map((day) => ({ ...day, area: dto.startArea!.trim() }))
         : parsedTripDays;
+    if (
+      Object.keys(explicitRequestContract.activityCountsByDay ?? {}).some(
+        (dayNumber) => !tripDays.some((day) => day.dayNumber === Number(dayNumber)),
+      )
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'ROUTE_CONSTRAINTS_VIOLATED',
+        message: '방문 개수를 지정한 날짜가 여행 기간에 없습니다. 여행 날짜를 확인해 주세요.',
+      });
+    }
     // Keep an immutable copy of the parsed contract. All later candidate and
     // route work must be checked against this snapshot, not against a value
     // that a provider, optimizer, or recovery branch may have changed.
@@ -1175,17 +1190,31 @@ export class TripsService {
             ]),
           ).values(),
         ];
+        const previousCategoryByPlace = new Map(
+          allRankings
+            .flatMap((item) => item.candidates)
+            .map((candidate) => [
+              candidate.place.placeId,
+              resolveVerifiedPlaceCategory(candidate.place) ?? '',
+            ]),
+        );
+        const remainingTripCounts = missingActivityCounts(
+          explicitRequestContract.requiredActivityCounts,
+          [...new Set(allSavedStops.map((stop) => stop.placeId))].map(
+            (id) => previousCategoryByPlace.get(id) ?? '',
+          ),
+        );
         const routeInput = {
           travelDate: dayDate,
           startTime: day.startTime,
           endTime: day.endTime,
           budget: day.dailyBudgetKrw ?? null,
           candidates: dayCandidates,
-          // Explicit counts are hard requirements, not preference weights.
-          // A request-wide count applies once; do not duplicate it on every day.
-          ...(day.dayNumber === 1
-            ? { requiredActivityCounts: explicitRequestContract.requiredActivityCounts }
-            : {}),
+          requiredActivityCounts: mergeActivityCounts(
+            requiredActivityCountsForDay(explicitRequestContract, day.dayNumber, tripDays.length),
+            day.dayNumber === tripDays.length ? remainingTripCounts : undefined,
+          ),
+          priorityActivityCounts: remainingTripCounts,
           maxWalkMinutes:
             !relaxations.has('route_constraints') &&
             (preferredTransit === null || preferredTransit === 'walk')
@@ -1664,6 +1693,19 @@ export class TripsService {
           allCandidatesMap.set(candidate.place.placeId, candidate.place);
         }
       }
+      const missingTripCounts = missingActivityCounts(
+        explicitRequestContract.requiredActivityCounts,
+        [...new Set(allSavedStops.map((stop) => stop.placeId))].map((id) => {
+          const candidate = allCandidatesMap.get(id);
+          return candidate ? (resolveVerifiedPlaceCategory(candidate) ?? '') : '';
+        }),
+      );
+      if (Object.keys(missingTripCounts).length > 0) {
+        throw new UnprocessableEntityException({
+          code: 'ROUTE_CONSTRAINTS_VIOLATED',
+          message: '여행 전체에 요청한 방문 개수가 부족해 완료 일정으로 공개하지 않았습니다.',
+        });
+      }
 
       // Complete only when the finalized stops retain evidence for explicit
       // user requirements. This runs after all route adjustments and is not a
@@ -2107,7 +2149,32 @@ export class TripsService {
     } else {
       proposedStops = currentStops;
     }
-    const candidates: RankedCandidate[] = proposedStops.map((stop) => ({
+    const preferenceJson = trip.preference?.validatedJson ?? {};
+    const days = (
+      Array.isArray(preferenceJson.days) ? preferenceJson.days : []
+    ) as DayTripPreference[];
+    const contract = preferenceJson.explicitRequestContract as
+      import('../preferences/explicit-request-contract').ExplicitRequestContract | undefined;
+    const stopDate = (stop: TripStop): string =>
+      days.length === 0
+        ? trip.travelDate
+        : new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(new Date(stop.arrivalAt));
+    if (
+      dto.action === 'reorder' &&
+      proposedStops.some((stop, index) => stopDate(stop) !== stopDate(currentStops[index]!))
+    ) {
+      throw this.invalidAction('다른 날짜로 경유지를 이동하는 순서 변경은 지원하지 않습니다.');
+    }
+    const editDays = days.length > 0 ? days : [{ dayNumber: 1, date: trip.travelDate }];
+    if (proposedStops.some((stop) => !editDays.some((day) => day.date === stopDate(stop)))) {
+      throw this.invalidAction('경유지 날짜가 저장된 일정 날짜와 일치하지 않습니다.');
+    }
+    const toCandidate = (stop: TripStop): RankedCandidate => ({
       place: {
         placeId: stop.place.id,
         source: stop.place.source,
@@ -2120,7 +2187,22 @@ export class TripsService {
         district: stop.place.district,
         rawCategory: stop.place.rawCategory,
         rawPayload: stop.place.rawPayload,
+        ...(stop.stopType === 'fixed_appointment'
+          ? {
+              fixedAppointment: true,
+              isAnchor: true,
+              targetTime: new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Seoul',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23',
+              }).format(new Date(stop.arrivalAt)),
+            }
+          : {}),
         ...(stop.tourismEvidence ? { tourism: stop.tourismEvidence } : {}),
+        ...(stop.stopType === 'fixed_appointment'
+          ? { fixedAppointment: true, targetTime: seoulTimeString(stop.arrivalAt) }
+          : {}),
       },
       estimatedCost: stop.estimatedCost,
       estimatedStayMinutes: stop.estimatedStayMinutes,
@@ -2130,32 +2212,8 @@ export class TripsService {
         tourismDispersion: stop.scoreBreakdown.tourismDispersion ?? null,
         localImpact: stop.scoreBreakdown.localImpact ?? null,
       },
-    }));
-    const editRouteInput = {
-      travelDate: trip.travelDate,
-      startTime: trip.startTime.slice(0, 5),
-      endTime: trip.endTime.slice(0, 5),
-      budget: trip.budgetKrw,
-      candidates,
-      preserveOrder: true,
-      requiredActivityCounts: (
-        trip.preference?.validatedJson?.explicitRequestContract as
-          import('../preferences/explicit-request-contract').ExplicitRequestContract | undefined
-      )?.requiredActivityCounts,
-    };
-    let route = this.routeOptimizer.optimize(editRouteInput);
-    const proposedPlaceIds = proposedStops.map((stop) => stop.placeId);
-    const routePlaceIds = route.map((stop) => stop.placeId);
-    if (
-      route.length !== proposedStops.length ||
-      routePlaceIds.some((placeId, index) => placeId !== proposedPlaceIds[index])
-    ) {
-      throw new UnprocessableEntityException({
-        code: 'EDIT_ROUTE_INFEASIBLE',
-        message: '편집한 순서를 유지하면서 시간·예산 제약을 만족할 수 없습니다.',
-      });
-    }
-    const mobility = trip.preference.validatedJson.mobilityConstraint as
+    });
+    const mobility = preferenceJson.mobilityConstraint as
       | {
           preferredTransit?: RequestedTransportMode;
           maxWalkMinutesPerLeg?: number;
@@ -2163,31 +2221,125 @@ export class TripsService {
         }
       | null
       | undefined;
-    const legEvidence = await this.collectLegEvidence(
-      route,
-      candidates,
-      mobility?.preferredTransit ?? null,
-      trip.travelDate,
-      {
-        maxWalkMinutes: mobility?.maxWalkMinutesPerLeg ?? null,
-        allowShortWalkSubstitution: !mobility?.avoidSteepInclineOrStairs,
-      },
-    );
-    const evidenceOverrides = routeLegOverrides(route, legEvidence.routes);
-    if (Object.keys(evidenceOverrides).length > 0) {
-      const measuredRoute = this.routeOptimizer.optimize({
-        ...editRouteInput,
-        legEstimates: evidenceOverrides,
-      });
-      if (measuredRoute.length !== route.length) {
+    const route: RouteStopPlan[] = [];
+    const legEvidence: {
+      routes: Array<RouteLegEstimate | null>;
+      accessibility: Array<AccessibilityLegEvidence | null>;
+      warnings: string[];
+    } = { routes: [], accessibility: [], warnings: [] };
+    const candidates: RankedCandidate[] = [];
+    for (const day of editDays) {
+      const dayStops = proposedStops.filter((stop) => stopDate(stop) === day.date);
+      const dayCandidates = dayStops.map(toCandidate);
+      candidates.push(...dayCandidates);
+      const editRouteInput: OptimizeRouteInput = {
+        travelDate: day.date!,
+        startTime: ('startTime' in day ? day.startTime : trip.startTime).slice(0, 5),
+        endTime: ('endTime' in day ? day.endTime : trip.endTime).slice(0, 5),
+        budget: 'dailyBudgetKrw' in day ? (day.dailyBudgetKrw ?? null) : trip.budgetKrw,
+        mealWindows: 'mealWindows' in day ? day.mealWindows : undefined,
+        fixedAppointments: 'fixedAppointments' in day ? day.fixedAppointments : undefined,
+        candidates: dayCandidates,
+        preserveOrder: true,
+        maxWalkMinutes:
+          mobility?.preferredTransit == null || mobility.preferredTransit === 'walk'
+            ? (('maxWalkMinutes' in day ? day.maxWalkMinutes : null) ??
+              mobility?.maxWalkMinutesPerLeg ??
+              null)
+            : null,
+        requiredActivityCounts: requiredActivityCountsForDay(
+          contract ?? {},
+          day.dayNumber,
+          editDays.length,
+        ),
+      };
+      const assertDayRoute = (dayRoute: RouteStopPlan[], code: string): void => {
+        const categories = [...new Set(dayRoute.map((plan) => plan.placeId))].flatMap((placeId) => {
+          const candidate = dayCandidates.find((item) => item.place.placeId === placeId);
+          const category = candidate && resolveVerifiedPlaceCategory(candidate.place);
+          return category ? [category] : [];
+        });
+        if (
+          dayRoute.length !== dayStops.length ||
+          dayRoute.some((plan, index) => plan.placeId !== dayStops[index]!.placeId) ||
+          currentStops.some(
+            (stop) =>
+              stop.stopType === 'fixed_appointment' &&
+              stopDate(stop) === day.date &&
+              !dayRoute.some(
+                (plan) =>
+                  plan.placeId === stop.placeId &&
+                  new Date(plan.arrivalAt).getTime() === new Date(stop.arrivalAt).getTime(),
+              ),
+          ) ||
+          Object.keys(missingActivityCounts(editRouteInput.requiredActivityCounts, categories))
+            .length > 0 ||
+          (days.length > 0 && completedRouteConstraintFailure(editRouteInput, dayRoute, true))
+        ) {
+          throw new UnprocessableEntityException({
+            code,
+            message: '편집한 일자의 순서·방문 수량·시간·예산 제약을 만족할 수 없습니다.',
+          });
+        }
+      };
+      let dayRoute = this.routeOptimizer.optimize(editRouteInput);
+      assertDayRoute(dayRoute, 'EDIT_ROUTE_INFEASIBLE');
+      const dayEvidence = await this.collectLegEvidence(
+        dayRoute,
+        dayCandidates,
+        mobility?.preferredTransit ?? null,
+        day.date!,
+        {
+          maxWalkMinutes: mobility?.maxWalkMinutesPerLeg ?? null,
+          allowShortWalkSubstitution: !mobility?.avoidSteepInclineOrStairs,
+        },
+      );
+      const evidenceOverrides = routeLegOverrides(dayRoute, dayEvidence.routes);
+      if (
+        editRouteInput.maxWalkMinutes != null &&
+        dayEvidence.routes.some(
+          (leg) =>
+            leg?.transportMode === 'walk' && leg.durationMinutes > editRouteInput.maxWalkMinutes!,
+        )
+      ) {
         throw new UnprocessableEntityException({
           code: 'EDIT_ROUTE_EVIDENCE_INFEASIBLE',
-          message: '공식 이동시간을 반영하면 편집한 일정을 요청 시간 안에 완료할 수 없습니다.',
+          message: '편집한 일자의 도보 이동시간 제약을 만족할 수 없습니다.',
         });
       }
-      route = measuredRoute;
+      if (Object.keys(evidenceOverrides).length > 0) {
+        const measuredInput = { ...editRouteInput, legEstimates: evidenceOverrides };
+        dayRoute = this.routeOptimizer.optimize(measuredInput);
+        assertDayRoute(dayRoute, 'EDIT_ROUTE_EVIDENCE_INFEASIBLE');
+        if (days.length > 0 && completedRouteConstraintFailure(measuredInput, dayRoute, true)) {
+          throw new UnprocessableEntityException({
+            code: 'EDIT_ROUTE_EVIDENCE_INFEASIBLE',
+            message: '공식 이동시간을 반영하면 편집한 일자의 제약을 만족할 수 없습니다.',
+          });
+        }
+      }
+      const offset = route.length;
+      route.push(...dayRoute.map((plan, index) => ({ ...plan, order: offset + index + 1 })));
+      legEvidence.routes.push(...dayRoute.map((_, index) => dayEvidence.routes[index] ?? null));
+      legEvidence.accessibility.push(
+        ...dayRoute.map((_, index) => dayEvidence.accessibility[index] ?? null),
+      );
+      legEvidence.warnings.push(...dayEvidence.warnings);
     }
-    const stopByPlace = new Map(proposedStops.map((stop) => [stop.placeId, stop]));
+    const actualCategories = [...new Set(route.map((plan) => plan.placeId))].flatMap((placeId) => {
+      const candidate = candidates.find((item) => item.place.placeId === placeId);
+      const category = candidate && resolveVerifiedPlaceCategory(candidate.place);
+      return category ? [category] : [];
+    });
+    if (
+      Object.keys(missingActivityCounts(contract?.requiredActivityCounts, actualCategories))
+        .length > 0
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'EDIT_ROUTE_INFEASIBLE',
+        message: '편집한 일정이 요청한 전체 방문 수량을 만족하지 않습니다.',
+      });
+    }
     await this.tripStops.manager.transaction(async (manager) => {
       if (removedStopId) {
         await manager.delete(TripStop, { id: removedStopId, tripId: trip.id });
@@ -2199,7 +2351,7 @@ export class TripsService {
         .where('trip_id = :tripId', { tripId: trip.id })
         .execute();
       for (const [routeIndex, plan] of route.entries()) {
-        const stop = stopByPlace.get(plan.placeId);
+        const stop = proposedStops[routeIndex];
         if (!stop) continue;
         await manager.update(TripStop, stop.id, {
           order: plan.order,

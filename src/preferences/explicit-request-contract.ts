@@ -1,12 +1,19 @@
+import { extractScopedActivityCounts } from './activity-count-contract';
+
+export type ActivityCounts = Partial<
+  Record<'cafe' | 'park' | 'restaurant' | 'culture' | 'attraction', number>
+>;
+
 /** User-stated conditions, not LLM or provider assertions. */
 export interface ExplicitRequestContract {
   startDate?: string;
   partySize?: number;
   budget?: { amountKrw: number; scope: 'total' | 'per_person' };
   activityWindow?: { startTime: string; endTime: string; sourceRequest: string };
-  requiredActivityCounts?: Partial<
-    Record<'cafe' | 'park' | 'restaurant' | 'culture' | 'attraction', number>
-  >;
+  /** Unscoped counts refer to the whole trip, not always its first day. */
+  requiredActivityCounts?: ActivityCounts;
+  dailyActivityCounts?: ActivityCounts;
+  activityCountsByDay?: Record<number, ActivityCounts>;
   airport?: {
     role: 'arrival' | 'departure' | 'unknown';
     name: 'ICN' | 'GMP' | 'unspecified';
@@ -123,8 +130,7 @@ export function extractExplicitRequestContract(
   now = new Date(),
 ): ExplicitRequestContract {
   const result: ExplicitRequestContract = {};
-  const requiredActivityCounts = explicitActivityCounts(text);
-  if (requiredActivityCounts) result.requiredActivityCounts = requiredActivityCounts;
+  Object.assign(result, extractScopedActivityCounts(text, explicitActivityCounts));
   const activityRange = text.match(
     new RegExp(
       `${TIME_PATTERN}\\s*(?:부터|から|~|〜|～|[-–])\\s*${TIME_PATTERN}\\s*(?:까지|まで)?`,

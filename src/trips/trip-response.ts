@@ -318,7 +318,7 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
     id: trip.id,
     isEditable,
     status:
-      trip.status === 'ready' &&
+      (trip.status === 'ready' || trip.status === 'modified') &&
       (contractAssessment?.status === 'partial' || requestedSafetyConstraints.length > 0)
         ? 'partial'
         : trip.status,
