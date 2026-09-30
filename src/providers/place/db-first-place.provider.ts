@@ -4,7 +4,7 @@ import { categoryMatches } from '../../recommendation/deterministic-candidate-ra
 import { PlaceCandidateSearchService } from './place-candidate-search.service';
 import { SeoulSpatialAreaService } from './seoul-spatial-area.service';
 import { NaverPlaceProvider } from './naver-place.provider';
-import { PlaceNormalizer } from './place-normalizer';
+import { isStudyCafe, PlaceNormalizer } from './place-normalizer';
 import type {
   PlaceProvider,
   PlaceSearchRequest,
@@ -32,7 +32,10 @@ export class DbFirstPlaceProvider implements PlaceProvider {
     });
     const scoped = await this.spatial.filterCandidateCoordinates(request.area, stored);
     const cached = (scoped.applied ? scoped.places : []).filter((place) => {
-      if (!place.location || !this.matchesRole(place.category, request.role, place.rawCategory)) {
+      if (
+        !place.location ||
+        !this.matchesRole(place.category, request.role, place.rawCategory, place.name)
+      ) {
         return false;
       }
       // A category hit alone cannot satisfy a more specific query such as
@@ -82,7 +85,9 @@ export class DbFirstPlaceProvider implements PlaceProvider {
     const filtered = await this.spatial.filterCandidateCoordinates(request.area, normalized);
     const allowed = new Set(
       (filtered.applied ? filtered.places : [])
-        .filter((place) => this.matchesRole(place.category, request.role, place.rawCategory))
+        .filter((place) =>
+          this.matchesRole(place.category, request.role, place.rawCategory, place.name),
+        )
         .map((place) => place.id),
     );
     const found = response.places.filter((record) =>
@@ -106,7 +111,9 @@ export class DbFirstPlaceProvider implements PlaceProvider {
     category: string | null,
     role?: string,
     rawCategory?: string | null,
+    name?: string | null,
   ): boolean {
+    if (role === 'cafe' && isStudyCafe(name, rawCategory)) return false;
     if (!role || role === 'candidate') return true;
     // Older cached Naver rows may have been stored before a category mapping
     // was added. Their original provider category is still verified evidence,

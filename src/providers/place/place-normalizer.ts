@@ -75,6 +75,10 @@ export function isMedicalCategoryOrName(text: string | null | undefined): boolea
   );
 }
 
+export function isStudyCafe(name: string | null | undefined, rawCategory?: string | null): boolean {
+  return /스터디\s*카페|study\s*caf[eé]|독서실/iu.test(`${name ?? ''} ${rawCategory ?? ''}`);
+}
+
 function normalizeCategory(rawCategory: string | null): string | null {
   if (!rawCategory) {
     return null;
@@ -92,6 +96,7 @@ function normalizeCategory(rawCategory: string | null): string | null {
   if (ktoContentType === '81') return 'lodging';
   if (ktoContentType === '82') return 'shopping';
   if (ktoContentType === '85') return 'restaurant';
+  if (isStudyCafe(fullCategory)) return 'study';
   if (/카페|커피/.test(fullCategory)) return 'cafe';
   if (
     /음식점|한식|일식|중식|양식|세계음식|아시아음식|분식|뷔페|술집|고기|육류|restaurant/.test(
@@ -172,7 +177,9 @@ export class PlaceNormalizer {
       source: record.provider,
       sourcePlaceId: record.sourcePlaceId,
       name: record.name,
-      category: normalizeCategory(record.rawCategory),
+      category: isStudyCafe(record.name, record.rawCategory)
+        ? 'study'
+        : normalizeCategory(record.rawCategory),
       address: record.address,
       roadAddress: record.roadAddress,
       location,

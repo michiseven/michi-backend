@@ -6,6 +6,7 @@ import { KTO_PLACE_SOURCE } from './kto-place.provider';
 import { knownSeoulSearchArea } from './seoul-area-centers';
 import { SeoulSpatialAreaService } from './seoul-spatial-area.service';
 import { verifiedPlacePrice } from './place-price-evidence';
+import { isStudyCafe } from './place-normalizer';
 
 const INTEREST_CATEGORIES: Readonly<Record<string, string>> = {
   cafe: 'cafe',
@@ -108,11 +109,13 @@ export class PlaceCandidateSearchService {
       .addOrderBy('place.id', 'ASC')
       .take(limit)
       .getMany();
-    return places.map((place) => {
-      const price = verifiedPlacePrice(place.estimatedCostKrw, place.priceEvidence);
-      place.estimatedCostKrw = price?.estimatedCostKrw ?? null;
-      place.priceEvidence = price?.priceEvidence ?? null;
-      return place;
-    });
+    return places
+      .filter((place) => !(place.category === 'cafe' && isStudyCafe(place.name, place.rawCategory)))
+      .map((place) => {
+        const price = verifiedPlacePrice(place.estimatedCostKrw, place.priceEvidence);
+        place.estimatedCostKrw = price?.estimatedCostKrw ?? null;
+        place.priceEvidence = price?.priceEvidence ?? null;
+        return place;
+      });
   }
 }

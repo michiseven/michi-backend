@@ -3,6 +3,37 @@ import { PlaceNormalizer } from './place-normalizer';
 import type { Place } from '../../database/entities';
 
 describe('DB first itinerary search', () => {
+  it('excludes study cafes returned by NAVER while retaining ordinary cafes', async () => {
+    const { provider, search } = setup([]);
+    search.mockResolvedValue({
+      places: ['홍대 스터디카페', '홍대 커피'].map((name, index) => ({
+        provider: 'naver-local',
+        providerMode: 'live',
+        sourcePlaceId: String(index),
+        sourcePlaceIdKind: 'provider',
+        name,
+        rawCategory: '음식점>카페',
+        address: '서울 마포구',
+        roadAddress: null,
+        longitude: 126.925,
+        latitude: 37.555,
+        rawPayload: {},
+      })),
+    });
+    const result = await provider.search({ area: '홍대', role: 'cafe', query: '카페' });
+    expect(result.places.map((item) => item.name)).toEqual(['홍대 커피']);
+  });
+  it('excludes stale DB study cafes while retaining ordinary cafes', async () => {
+    const study = {
+      ...place('study'),
+      name: '홍대 스터디카페',
+      rawCategory: '서비스>스터디카페',
+    } as Place;
+    const { provider, search } = setup([study, ...['a', 'b', 'c'].map((id) => place(id))]);
+    const result = await provider.search({ area: '홍대', role: 'cafe', query: '카페' });
+    expect(result.places.map((item) => item.sourcePlaceId)).toEqual(['a', 'b', 'c']);
+    expect(search).not.toHaveBeenCalled();
+  });
   const place = (id: string, category = 'cafe'): Place =>
     ({
       id,

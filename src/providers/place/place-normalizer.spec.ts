@@ -1,6 +1,21 @@
 import { PlaceNormalizer, normalizeNaverLocalItem } from './place-normalizer';
 
 describe('NAVER place normalization', () => {
+  it.each([
+    ['홍대 스터디카페', '음식점>카페', 'study'],
+    ['집중 공간', '서비스>스터디 카페', 'study'],
+    ['Focus Study Cafe', '카페', 'study'],
+    ['홍대 커피', '음식점>카페>커피전문점', 'cafe'],
+  ])('classifies %s separately from ordinary cafes', (name, category, expected) => {
+    const record = normalizeNaverLocalItem({
+      title: name,
+      category,
+      address: '서울특별시 마포구 서교동',
+      mapx: '1269250000',
+      mapy: '375550000',
+    });
+    expect(new PlaceNormalizer().normalize(record!).category).toBe(expected);
+  });
   it('converts official WGS84 integer coordinates and preserves raw data', () => {
     const raw = {
       title: '<b>서울시청</b>',
