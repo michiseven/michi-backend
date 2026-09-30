@@ -3,6 +3,8 @@ import { MockTripPreferenceParser } from './mock-trip-preference.parser';
 import { PreferencesService } from './preferences.service';
 import { TripPreferenceSchemaValidator } from './trip-preference-schema.validator';
 import type { TripPreferenceParser } from './preference-parser';
+import { HeuristicRouteOptimizer } from '../recommendation/heuristic-route-optimizer';
+import type { RankedCandidate } from '../recommendation/ports';
 
 describe('PreferencesService', () => {
   it.each(['13~18시', '13〜18時', '13시부터18시까지'])(
@@ -51,6 +53,15 @@ describe('PreferencesService', () => {
     ['홍대13~18시 카페, 17시에 저녁 양식', '17:00', 60],
     ['홍대13~18시 카페, 17시에90분저녁 양식', '17:00', 90],
     ['홍대13~18시 카페, 18:30에저녁 양식', '18:30', 60],
+    ['토요일 홍대에서13시부터18시까지카페와양식저녁. 저녁은17시에90분동안먹을거야.', '17:00', 90],
+    [
+      '토요일 홍대에서 13시부터 18시까지 카페와 양식 저녁을 즐기고 싶어요. 저녁은 17시에 90분 동안 먹을 거야.',
+      '17:00',
+      90,
+    ],
+    ['홍대13~18시 카페, 17시에저녁을90분동안먹을거야', '17:00', 90],
+    ['弘大13〜18時 カフェ。夕食は17時に90分間食べたい', '17:00', 90],
+    ['홍대13~18시 카페에서90분, 저녁은17시', '17:00', 60],
   ])('preserves explicit meal timing in %s', async (text, targetTime, durationMinutes) => {
     const schema = new TripPreferenceSchemaValidator();
     const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
@@ -59,6 +70,45 @@ describe('PreferencesService', () => {
       endTime: '18:00',
       mealWindows: [expect.objectContaining({ targetTime, durationMinutes })],
     });
+    const day = result.preference.days![0]!;
+    const candidates: RankedCandidate[] = ['cafe', 'restaurant'].map((category, index) => ({
+      place: {
+        placeId: category,
+        source: 'fixture',
+        sourcePlaceId: category,
+        name: category,
+        category,
+        address: '서울 홍대',
+        roadAddress: null,
+        district: '마포구',
+        rawCategory: category,
+        location: { type: 'Point', coordinates: [126.924 + index * 0.001, 37.557] },
+        rawPayload: {},
+      },
+      estimatedStayMinutes: 60,
+      estimatedCost: null,
+      reason: 'fixture',
+      scoreBreakdown: {
+        total: 1,
+        preference: 1,
+        crowd: 1,
+        distance: 1,
+        time: 1,
+        budget: 1,
+        diversity: 1,
+        area: 1,
+      },
+    }));
+    const route = new HeuristicRouteOptimizer().optimize({
+      travelDate: day.date!,
+      startTime: day.startTime,
+      endTime: day.endTime,
+      budget: null,
+      candidates,
+      mealWindows: day.mealWindows,
+      requiredActivityCounts: { cafe: 1, restaurant: 1 },
+    });
+    expect(route).toHaveLength(targetTime === '17:00' && durationMinutes === 60 ? 2 : 0);
   });
   it('does not flatten distinct multi-day boundary times into a single activity range', async () => {
     const schema = new TripPreferenceSchemaValidator();

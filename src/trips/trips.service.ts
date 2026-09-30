@@ -49,6 +49,7 @@ import { KtoPlaceProvider } from '../providers/place/kto-place.provider';
 import { SeoulSpatialAreaService } from '../providers/place/seoul-spatial-area.service';
 import { verifiedPlacePrice } from '../providers/place/place-price-evidence';
 import { incompletePriceWarning } from './trip-price-coverage';
+import { routeUnassignedGapWarnings } from './route-unassigned-gap-warnings';
 import { allowedPlaceSourcesForTrip } from './trip-place-source-policy';
 
 export function completeRouteCost(route: Array<{ estimatedCost: number | null }>): number | null {
@@ -2530,14 +2531,19 @@ export class TripsService {
         ? tripDto.days
         : [{ date: trip.travelDate, endTime: trip.endTime.slice(0, 5) }]
     ).flatMap((day) => {
+      const dayStops = (trip.stops ?? [])
+        .filter((stop) => seoulDateString(stop.arrivalAt) === day.date)
+        .map((stop) => ({
+          arrivalAt: stop.arrivalAt.toISOString(),
+          leaveAt: stop.leaveAt.toISOString(),
+          inboundRoute: stop.inboundRoute,
+        }));
       const warning = routeFreeTimeWarning(
         { travelDate: day.date, endTime: (day.endTime ?? tripDto.endTime).slice(0, 5) },
-        (trip.stops ?? [])
-          .filter((stop) => seoulDateString(stop.arrivalAt) === day.date)
-          .map((stop) => ({ leaveAt: stop.leaveAt.toISOString() })),
+        dayStops,
         locale,
       );
-      return warning ? [warning] : [];
+      return [...(warning ? [warning] : []), ...routeUnassignedGapWarnings(dayStops, locale)];
     });
     const safetyConstraintWarnings = tripDto.safetyConstraints
       ? safetyWarnings(tripDto.safetyConstraints)

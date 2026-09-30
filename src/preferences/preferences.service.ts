@@ -155,15 +155,19 @@ function userMealTiming(
   const clock = '(\\d{1,2})(?::(\\d{2})|\\s*(?:시|時)(?:\\s*(\\d{1,2})\\s*(?:분|分))?)';
   const match =
     text.match(
-      new RegExp(`${clock}\\s*(?:에|から)?\\s*(?:\\d+\\s*(?:분|分)\\s*)?(?:${aliases})`, 'iu'),
+      new RegExp(
+        `${clock}\\s*(?:에|に|から)?\\s*(?:\\d+\\s*(?:분|分)(?:동안|間)?\\s*)?(?:${aliases})`,
+        'iu',
+      ),
     ) ?? text.match(new RegExp(`(?:${aliases})\\s*(?:은|는|을|를|は|を)?\\s*${clock}`, 'iu'));
   const targetTime =
     match && Number(match[1]) < 24 && Number(match[2] ?? match[3] ?? 0) < 60
       ? `${match[1]!.padStart(2, '0')}:${String(match[2] ?? match[3] ?? '00').padStart(2, '0')}`
       : undefined;
+  const durationClock = '(?:\\d{1,2}:\\d{2}|\\d{1,2}\\s*(?:시|時)(?:\\s*\\d{1,2}\\s*(?:분|分))?)';
   const durationMatch = text.match(
     new RegExp(
-      `(\\d+)\\s*(?:분|分)\\s*(?:${aliases})|(?:${aliases})\\s*(?:은|는|을|를|は|を)?\\s*(\\d+)\\s*(?:분|分)`,
+      `(\\d+)\\s*(?:분|分)(?:동안|間)?\\s*(?:${aliases})|(?:${aliases})\\s*(?:은|는|을|를|は|を)?\\s*(?:${durationClock}\\s*(?:에|に|から)?\\s*)?(\\d+)\\s*(?:분|分)`,
       'iu',
     ),
   );

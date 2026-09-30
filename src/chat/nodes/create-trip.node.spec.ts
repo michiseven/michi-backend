@@ -3,6 +3,30 @@ import { createCreateTripNode } from './create-trip.node';
 import type { ChatState } from '../chat-state';
 
 describe('createCreateTripNode', () => {
+  it.each(['ko', 'ja'] as const)(
+    'connects gap disclosure to a completed itinerary in %s',
+    async (locale) => {
+      const warning =
+        locale === 'ko'
+          ? '14:00–17:00은 활동 미배정 180분 구간입니다(이동시간 포함). 이동시간의 확인된 근거가 없어 자유 시간을 산정할 수 없습니다.'
+          : '14:00–17:00は活動が未割り当ての180分間です（移動時間を含みます）。移動時間の確認済み根拠がないため、自由時間は算定できません。';
+      const node = createCreateTripNode({
+        generate: jest.fn().mockResolvedValue({
+          trip: { id: 'ready-with-gap', status: 'ready', stops: [] },
+          warnings: [warning, 'unrelated provider warning'],
+        }),
+      } as never);
+      const update = await node({
+        locale,
+        messages: [],
+        createTripInput: { text: '카페와 저녁', startArea: '홍대' },
+      } as unknown as ChatState);
+      expect(update.responseMessage).toContain(locale === 'ko' ? '완성되었습니다' : '完成しました');
+      expect(update.responseMessage).toContain(warning);
+      expect(update.responseMessage).not.toContain('unrelated provider warning');
+      expect(update.status).toBe('completed');
+    },
+  );
   it('does not claim completion for unknown stroller access or invent airport conditions', async () => {
     const node = createCreateTripNode({
       generate: jest.fn().mockResolvedValue({

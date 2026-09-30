@@ -35,6 +35,7 @@ import {
 import { DistanceBasedRoutingProvider } from '../routing/distance-based-routing.provider';
 import { DeterministicItineraryExplanationProvider } from '../ai/deterministic-itinerary-explanation.provider';
 import type { ItineraryExplanationProvider } from '../ai/itinerary-explanation.types';
+import type { TripApiResponse } from './trip-response';
 
 const accessibility = {
   evaluateLeg: jest.fn().mockResolvedValue({
@@ -499,6 +500,93 @@ function tripFixture(): Trip {
 }
 
 describe('TripsService scoped alternatives', () => {
+  it.each([
+    ['ko', 1],
+    ['ja', 1],
+    ['ko', 2],
+  ] as const)(
+    'keeps persisted internal gap warnings identical in generation and GET envelopes (%s)',
+    async (locale, dayCount) => {
+      const trip = tripFixture();
+      trip.endTime = '18:00:00';
+      trip.preference.validatedJson = { locale };
+      trip.stops[0]!.arrivalAt = new Date('2026-08-18T04:00:00.000Z');
+      trip.stops[0]!.leaveAt = new Date('2026-08-18T05:00:00.000Z');
+      trip.stops[1]!.arrivalAt = new Date('2026-08-18T08:00:00.000Z');
+      trip.stops[1]!.leaveAt = new Date('2026-08-18T09:00:00.000Z');
+      trip.stops[1]!.inboundRoute = {
+        evidence: 'estimated',
+        durationMinutes: 6,
+        distanceKm: 0.4,
+        method: 'straight-line-walking-estimate',
+        transportMode: 'walk',
+        disclaimer: 'fixture',
+      };
+      if (dayCount === 2) {
+        trip.preference.validatedJson = {
+          locale,
+          days: ['2026-08-18', '2026-08-19'].map((date, index) => ({
+            dayNumber: index + 1,
+            date,
+            area: '홍대',
+            startTime: '13:00',
+            endTime: '18:00',
+          })),
+        };
+        trip.stops.push(
+          ...trip.stops.map((stop) => ({
+            ...stop,
+            id: `second-day-${stop.id}`,
+            order: stop.order + 2,
+            arrivalAt: new Date(stop.arrivalAt.getTime() + 86_400_000),
+            leaveAt: new Date(stop.leaveAt.getTime() + 86_400_000),
+          })),
+        );
+      }
+      const service = Object.create(TripsService.prototype) as TripsService;
+      Object.assign(service, {
+        trips: repository<Trip>({ findOne: jest.fn().mockResolvedValue(trip) }),
+        placeProvider: { name: 'mock', mode: 'mock' },
+        ktoProvider: { name: 'mock', mode: 'mock' },
+        crowdProvider: { name: 'mock', mode: 'mock' },
+        routingProvider: { mode: 'mock' },
+      });
+      const generated = (
+        service as unknown as {
+          responseFor: (
+            trip: Trip,
+            warnings: string[],
+            editToken?: string,
+            isGeneration?: boolean,
+          ) => TripApiResponse;
+        }
+      ).responseFor(trip, [], trip.editToken!, true);
+      const reloaded = await service.get(trip.id, trip.editToken!);
+      const phrase = locale === 'ko' ? '활동 미배정' : '活動が未割り当て';
+      expect(reloaded.warnings.filter((warning) => warning.includes(phrase))).toHaveLength(
+        dayCount,
+      );
+      if (dayCount === 2) {
+        expect(reloaded.warnings.find((warning) => warning.includes('2026-08-19'))).toContain(
+          '14:00–17:00',
+        );
+      }
+      expect(generated.warnings.filter((warning) => warning.includes(phrase))).toEqual(
+        reloaded.warnings.filter((warning) => warning.includes(phrase)),
+      );
+      expect(reloaded.warnings.find((warning) => warning.includes(phrase))).toContain(
+        '14:00–17:00',
+      );
+      expect(reloaded.warnings.find((warning) => warning.includes(phrase))).toContain('180');
+      expect(reloaded.trip.status).toBe('ready');
+      expect(reloaded.trip.stops.slice(0, 2).map((stop) => [stop.arrivalAt, stop.leaveAt])).toEqual(
+        [
+          ['13:00', '14:00'],
+          ['17:00', '18:00'],
+        ],
+      );
+    },
+  );
   it('keeps same-category, geolocated candidates within the original area and never retries globally', async () => {
     const trip = tripFixture();
     trip.preference.area = '성수';

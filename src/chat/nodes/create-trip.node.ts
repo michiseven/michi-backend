@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import type { ChatState, ChatUpdate } from '../chat-state';
 import { generationFailure } from '../generation-failure';
 import { groundedRecoveryQuestion } from '../grounded-recovery-question';
+import { isUnassignedGapWarning } from '../../trips/route-unassigned-gap-warnings';
 
 export function createCreateTripNode(tripsService: TripsService, apiKey?: string) {
   const logger = new Logger('CreateTripNode');
@@ -79,13 +80,18 @@ export function createCreateTripNode(tripsService: TripsService, apiKey?: string
             : isKo
               ? '요청 시간대 중 아직 채우지 못한 시간이 있습니다. 타임라인의 자유 시간을 확인해 주세요.'
               : '指定時間帯に未充足の時間があります。タイムラインの自由時間を確認してください。';
-      const responseMessage = isPartial
-        ? isKo
-          ? `${area} 시내 일정 초안을 만들었습니다. ${incompleteConditions} 전체 요청이 완료된 것은 아니며, 요청 조건은 유지했습니다.${costFeedback}`
-          : `${area}の市内旅程の下書きを作成しました。${incompleteConditions} 旅程全体はまだ完成していません。指定条件は保持しています。${costFeedback}`
-        : isKo
-          ? `✨ **${area}** 맞춤 여행 일정이 완성되었습니다! 🎉${costFeedback}\n\n지도와 타임라인에서 상세 장소와 이동 동선을 확인해 보세요. 특정 장소를 변경하고 싶으시면 말씀해 주세요!`
-          : `✨ **${area}**のおすすめ旅程が完成しました！🎉${costFeedback}\n\nマップとタイムラインで詳細ルートをご確認いただけます。気になるスポットの変更もお気軽にどうぞ！`;
+      const scheduleGapFeedback = (generated.warnings ?? [])
+        .filter(isUnassignedGapWarning)
+        .join('\n');
+      const responseMessage =
+        (isPartial
+          ? isKo
+            ? `${area} 시내 일정 초안을 만들었습니다. ${incompleteConditions} 전체 요청이 완료된 것은 아니며, 요청 조건은 유지했습니다.${costFeedback}`
+            : `${area}の市内旅程の下書きを作成しました。${incompleteConditions} 旅程全体はまだ完成していません。指定条件は保持しています。${costFeedback}`
+          : isKo
+            ? `✨ **${area}** 맞춤 여행 일정이 완성되었습니다! 🎉${costFeedback}\n\n지도와 타임라인에서 상세 장소와 이동 동선을 확인해 보세요. 특정 장소를 변경하고 싶으시면 말씀해 주세요!`
+            : `✨ **${area}**のおすすめ旅程が完成しました！🎉${costFeedback}\n\nマップとタイムラインで詳細ルートをご確認いただけます。気になるスポットの変更もお気軽にどうぞ！`) +
+        (scheduleGapFeedback ? `\n\n${scheduleGapFeedback}` : '');
 
       const generatedStops = generated.trip.stops ?? [];
       const cafeStops = generatedStops.filter((stop) =>
