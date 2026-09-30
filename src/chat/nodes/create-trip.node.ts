@@ -2,8 +2,9 @@ import type { TripsService } from '../../trips/trips.service';
 import { Logger } from '@nestjs/common';
 import type { ChatState, ChatUpdate } from '../chat-state';
 import { generationFailure } from '../generation-failure';
+import { groundedRecoveryQuestion } from '../grounded-recovery-question';
 
-export function createCreateTripNode(tripsService: TripsService) {
+export function createCreateTripNode(tripsService: TripsService, apiKey?: string) {
   const logger = new Logger('CreateTripNode');
   return async (state: ChatState): Promise<ChatUpdate> => {
     const input = state.createTripInput;
@@ -55,15 +56,23 @@ export function createCreateTripNode(tripsService: TripsService) {
 
       const currency = new Intl.NumberFormat(isKo ? 'ko-KR' : 'ja-JP');
       let costFeedback = '';
-      if (generated.trip.estimatedTotalCost != null && input?.budget) {
+      if (generated.trip.estimatedTotalCost != null && generated.trip.budgetInput) {
+        const budgetInput = generated.trip.budgetInput;
         costFeedback = isKo
-          ? `\n💰 1인 예상 비용은 약 ${currency.format(generated.trip.estimatedTotalCost)}원으로, 요청하신 ${currency.format(input.budget)}원 예산 범위 내에 맞추었습니다.`
-          : `\n💰 1人あたりの予想費用は約${currency.format(generated.trip.estimatedTotalCost)}ウォンです。`;
+          ? `\n확인된 예상 비용은 ${currency.format(generated.trip.estimatedTotalCost)}원입니다. 요청 예산은 ${budgetInput.scope === 'per_person' ? '1인당' : '전체'} ${currency.format(budgetInput.amountKrw)}원이며, 확인되지 않은 비용은 포함하지 않았습니다.`
+          : `\n確認済み費用は${currency.format(generated.trip.estimatedTotalCost)}ウォンです。指定予算は${budgetInput.scope === 'per_person' ? '1人あたり' : '全体'}${currency.format(budgetInput.amountKrw)}ウォンで、未確認の費用は含まれていません。`;
       }
 
-      const responseMessage = isKo
-        ? `✨ **${area}** 맞춤 여행 일정이 완성되었습니다! 🎉${costFeedback}\n\n지도와 타임라인에서 상세 장소와 이동 동선을 확인해 보세요. 특정 장소를 변경하고 싶으시면 말씀해 주세요!`
-        : `✨ **${area}**のおすすめ旅程が完成しました！🎉${costFeedback}\n\nマップとタイムラインで詳細ルートをご確認いただけます。気になるスポットの変更もお気軽にどうぞ！`;
+      const isPartial =
+        generated.trip.contractAssessment?.status === 'partial' ||
+        generated.trip.status === 'partial';
+      const responseMessage = isPartial
+        ? isKo
+          ? `${area} 시내 일정 초안을 만들었습니다. 공항 이동시간·터미널 또는 짐 보관 조건은 아직 검증되지 않아 전체 일정이 완료된 것은 아닙니다. 요청 조건은 유지했으며, 이동시간과 보관 가능 여부 확인이 필요합니다.${costFeedback}`
+          : `${area}の市内旅程の下書きを作成しました。空港への移動時間・ターミナルまたは荷物預かり条件は未確認のため、旅程全体はまだ完成していません。指定条件は保持しています。${costFeedback}`
+        : isKo
+          ? `✨ **${area}** 맞춤 여행 일정이 완성되었습니다! 🎉${costFeedback}\n\n지도와 타임라인에서 상세 장소와 이동 동선을 확인해 보세요. 특정 장소를 변경하고 싶으시면 말씀해 주세요!`
+          : `✨ **${area}**のおすすめ旅程が完成しました！🎉${costFeedback}\n\nマップとタイムラインで詳細ルートをご確認いただけます。気になるスポットの変更もお気軽にどうぞ！`;
 
       const generatedStops = generated.trip.stops ?? [];
       const cafeStops = generatedStops.filter((stop) =>
@@ -151,8 +160,23 @@ export function createCreateTripNode(tripsService: TripsService) {
         `Trip generation failed in chat: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
       );
       const failure = generationFailure(err, state.locale);
+      const canClarify = [
+        'THEME_EVIDENCE_MISSING',
+        'MEAL_CUISINE_NOT_FOUND',
+        'AREA_FILTER_UNAVAILABLE',
+        'CATEGORY_CANDIDATES_NOT_FOUND',
+      ].includes(failure.code);
+      const question = canClarify
+        ? await groundedRecoveryQuestion(
+            apiKey,
+            input?.text || rawText,
+            failure.message,
+            state.locale,
+          )
+        : null;
       return {
-        responseMessage: failure.message,
+        responseMessage: question ?? failure.message,
+        pendingCreateTripInput: canClarify ? input : null,
         actionChips: failure.chips,
         errorCode: failure.code,
         status: 'failed',

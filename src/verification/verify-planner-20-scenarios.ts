@@ -227,10 +227,18 @@ async function main(): Promise<void> {
   const outcomes: Array<{ id: string; outcome: string }> = [];
   const failures: string[] = [];
   for (const scenario of scenarios) {
+    const startedAt = Date.now();
+    console.log(JSON.stringify({ scenario: scenario.id, phase: 'started' }));
     try {
-      outcomes.push(await runScenario(scenario));
+      const outcome = await runScenario(scenario);
+      outcomes.push(outcome);
+      console.log(JSON.stringify({ ...outcome, elapsedMs: Date.now() - startedAt }));
     } catch (error) {
-      failures.push(`${scenario.id}: ${error instanceof Error ? error.message : String(error)}`);
+      const failure = `${scenario.id}: ${error instanceof Error ? error.message : String(error)}`;
+      failures.push(failure);
+      console.log(
+        JSON.stringify({ scenario: scenario.id, failure, elapsedMs: Date.now() - startedAt }),
+      );
     }
   }
   console.log(JSON.stringify({ baseUrl, outcomes, failures }, null, 2));

@@ -2,6 +2,7 @@ import type { ChatState, ChatUpdate } from '../chat-state';
 
 export function createAnswerGroundedQuestionNode() {
   return (state: ChatState): Promise<ChatUpdate> => {
+    if (state.responseMessage) return Promise.resolve({});
     const facts = state.verifiedPlaceFacts;
     const isKo = state.locale === 'ko';
     const webEvidence = facts?.webEvidence;

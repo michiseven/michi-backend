@@ -15,6 +15,7 @@ import { createLoadVerifiedFactsNode } from './nodes/load-verified-facts.node';
 import { createAnswerGroundedQuestionNode } from './nodes/answer-grounded-question.node';
 import { createCreateTripNode } from './nodes/create-trip.node';
 import { createClarifyNode } from './nodes/clarify.node';
+import { createResolveTripAreaNode } from './nodes/resolve-trip-area.node';
 import { createResolveModificationTargetNode } from './nodes/resolve-modification-target.node';
 import { createFindReplacementCandidatesNode } from './nodes/find-replacement-candidates.node';
 import { createRequestApprovalNode } from './nodes/request-approval.node';
@@ -50,7 +51,8 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
     .addNode('load_verified_facts', createLoadVerifiedFactsNode(deps.placesRepo, deps.tripsRepo))
     .addNode('enrich_place_details', createEnrichPlaceDetailsNode(deps.placeDetailEnrichment))
     .addNode('answer_grounded', createAnswerGroundedQuestionNode())
-    .addNode('create_trip', createCreateTripNode(deps.tripsService))
+    .addNode('create_trip', createCreateTripNode(deps.tripsService, deps.openaiApiKey))
+    .addNode('resolve_trip_area', createResolveTripAreaNode(deps.placesRepo))
     .addNode('summarize_trip', createSummarizeTripNode(deps.tripsRepo))
     .addNode('clarify', createClarifyNode())
     .addNode('resolve_target', createResolveModificationTargetNode(deps.tripsRepo))
@@ -78,7 +80,7 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
         case 'qa':
           return 'load_verified_facts';
         case 'create_trip':
-          return 'create_trip';
+          return 'resolve_trip_area';
         case 'summarize_trip':
           return 'summarize_trip';
         case 'modify_trip':
@@ -97,6 +99,9 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
     .addEdge('answer_grounded', END)
 
     // Linear flow for trip creation and clarification
+    .addConditionalEdges('resolve_trip_area', (state: ChatState) =>
+      state.intent === 'clarify' ? 'clarify' : 'create_trip',
+    )
     .addEdge('create_trip', END)
     .addEdge('summarize_trip', END)
     .addEdge('clarify', END)

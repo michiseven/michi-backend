@@ -110,6 +110,15 @@ export interface StructuredChatChoice {
   optionId: string;
 }
 
+export interface ChatModification {
+  action: 'remove' | 'replace';
+  targetStopId: string | null;
+  targetStopOrder?: number;
+  targetPlaceName?: string;
+  replacementQuery: string | null;
+  chosenPlaceId?: string;
+}
+
 export type CachedChatResponse = Omit<
   import('./dto/chat-response.dto').ChatResponseDto,
   'threadId' | 'threadSecret' | 'editToken'
@@ -153,14 +162,12 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
-  modification: Annotation<{
-    action: 'remove' | 'replace';
-    targetStopId: string | null;
-    targetStopOrder?: number;
-    targetPlaceName?: string;
-    replacementQuery: string | null;
-    chosenPlaceId?: string;
-  } | null>({
+  modification: Annotation<ChatModification | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+  /** Retain the requested replacement constraints while choosing its target. */
+  pendingModification: Annotation<ChatModification | null>({
     reducer: (_, update) => update,
     default: () => null,
   }),
@@ -236,7 +243,7 @@ export const ChatAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
-  clarificationKind: Annotation<'meal' | 'general' | null>({
+  clarificationKind: Annotation<'meal' | 'general' | 'direction' | null>({
     reducer: (_, update) => update,
     default: () => null,
   }),

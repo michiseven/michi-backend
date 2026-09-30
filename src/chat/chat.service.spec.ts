@@ -158,6 +158,98 @@ describe('ChatService', () => {
     expect(res.responseMessage).toContain('이상의집');
   });
 
+  it('carries Hongdae scope across a target chip without mutating before approval', async () => {
+    const tripRepo = mockTripsRepo as { findOne: jest.Mock<() => Promise<unknown>> };
+    const placeRepo = mockPlacesRepo as {
+      createQueryBuilder: () => { getMany: jest.Mock<() => Promise<unknown[]>> };
+    };
+    const tripsService = mockTripsService as { patchStops: jest.Mock };
+    tripRepo.findOne.mockResolvedValue({
+      id: 'trip',
+      stops: [
+        {
+          id: 's1',
+          order: 1,
+          placeId: 'p1',
+          place: { name: '공덕로스터리', category: 'cafe', district: '마포구' },
+        },
+        {
+          id: 's2',
+          order: 2,
+          placeId: 'p2',
+          place: { name: '포멜로빈 공덕점', category: 'cafe', district: '마포구' },
+        },
+      ],
+    });
+    placeRepo.createQueryBuilder().getMany.mockResolvedValue([
+      {
+        id: 'hongdae',
+        name: '홍대 커피',
+        category: 'cafe',
+        rawCategory: '음식점>카페',
+        district: '마포구',
+        location: { type: 'Point', coordinates: [126.924, 37.558] },
+      },
+      {
+        id: 'gongdeok',
+        name: '공덕 커피',
+        category: 'cafe',
+        rawCategory: '음식점>카페',
+        district: '마포구',
+        location: { type: 'Point', coordinates: [126.951, 37.544] },
+      },
+    ]);
+    const { threadId, threadSecret } = await service.createThread({
+      locale: 'ko',
+      currentTripId: 'trip',
+    });
+    const first = await service.sendMessage(
+      threadId,
+      { message: '홍대입구역 도보 15분 이내 일반 카페로 바꿔줘. 스터디카페는 제외' },
+      { threadSecret },
+    );
+    expect(first.errorCode).toBe('TARGET_AMBIGUOUS');
+    const selected = await service.sendMessage(
+      threadId,
+      {
+        message: '1번째 장소를 다른 곳으로 바꿔줘',
+        mutationTarget: { stopId: 's1', stopOrder: 1, placeName: '공덕로스터리' },
+      },
+      { threadSecret },
+    );
+    expect(selected.status).toBe('awaiting_confirmation');
+    expect(selected.alternatives?.map((p) => p.placeId)).toEqual(['hongdae']);
+    expect(tripsService.patchStops).not.toHaveBeenCalled();
+  });
+
+  it('answers an active airport gap in explicitly requested Korean without re-generating', async () => {
+    const tripRepo = mockTripsRepo as { findOne: jest.Mock<() => Promise<unknown>> };
+    const tripsService = mockTripsService as { generate: jest.Mock; patchStops: jest.Mock };
+    tripRepo.findOne.mockResolvedValue({
+      id: 'trip',
+      stops: [],
+      preference: {
+        originalText: '인천공항 18시 도착, 캐리어 보관 후 짐 회수',
+        validatedJson: {},
+      },
+    });
+    const { threadId, threadSecret } = await service.createThread({
+      locale: 'ja',
+      currentTripId: 'trip',
+    });
+    const result = await service.sendMessage(
+      threadId,
+      { locale: 'ja', message: '짐 회수와 공항 도착이 빠졌는데 어떻게 돼? 한국어로 답해줘' },
+      { threadSecret },
+    );
+    expect(result.responseMessage).toContain('18:00');
+    expect(result.responseMessage).toContain('짐 보관시설');
+    expect(result.responseMessage).toContain('터미널');
+    expect(result.pendingQuestion).toBeFalsy();
+    expect(tripsService.generate).not.toHaveBeenCalled();
+    expect(tripsService.patchStops).not.toHaveBeenCalled();
+  });
+
   it('preserves distinct profile airports through the chat request into trip generation', async () => {
     const { threadId, threadSecret } = await service.createThread({ locale: 'ko' });
 

@@ -31,6 +31,8 @@ export function createClassifyIntentNode(
 
     const lastMsg = state.messages[state.messages.length - 1];
     const text = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
+    const pendingGeneral = !state.pendingQuestion && state.pendingCreateTripInput;
+    const requestText = pendingGeneral ? `${pendingGeneral.text}\n추가 답변: ${text}` : text;
     const hasActiveTrip = Boolean(state.currentTripId);
 
     const conversation = state.messages
@@ -38,21 +40,40 @@ export function createClassifyIntentNode(
       .map((message) => (typeof message.content === 'string' ? message.content : ''))
       .filter(Boolean)
       .join('\n');
-    const deterministicClassification = classifyIntentRuleBased(text, hasActiveTrip);
-    const llmClassification = await llmClassifier(openaiApiKey, text, hasActiveTrip, conversation);
-    // The LLM may propose a generic trip for a request with no usable
-    // itinerary detail. That is a product-policy decision, so the narrow
-    // deterministic clarification gate wins over a plausible LLM guess.
-    const deterministicExplicitTrip =
-      deterministicClassification.intent === 'create_trip' &&
-      Boolean(extractExplicitSeoulArea(text));
-    const llmRequestsMealChoice =
-      llmClassification?.intent === 'clarify' && llmClassification.clarificationKind === 'meal';
-    const classification =
-      deterministicClassification.intent === 'clarify' ||
-      (deterministicExplicitTrip && !llmRequestsMealChoice)
-        ? deterministicClassification
-        : (llmClassification ?? deterministicClassification);
+    const deterministicClassification = classifyIntentRuleBased(requestText, hasActiveTrip);
+    const llmClassification = await llmClassifier(
+      openaiApiKey,
+      requestText,
+      hasActiveTrip,
+      conversation,
+    );
+    // Interpret first. A missing alias must not veto the model's understanding.
+    let classification = llmClassification ?? deterministicClassification;
+    // The model's output schema does not contain mutation targets. Deterministic
+    // edits retain the complete latest request rather than losing its constraints.
+    if (deterministicClassification.intent === 'modify_trip') {
+      classification = deterministicClassification;
+    }
+    if (
+      hasActiveTrip &&
+      /공항|터미널|짐|캐리어|비행기|空港|ターミナル|荷物|フライト/u.test(text) &&
+      /\?|？|어떻게|어디|누락|빠졌|없어|알려|확인|どう|どこ|ない|教えて/u.test(text) &&
+      deterministicClassification.intent !== 'modify_trip'
+    ) {
+      classification = { intent: 'qa' };
+    }
+    if (
+      classification.intent === 'clarify' &&
+      classification.clarificationKind !== 'meal' &&
+      classification.readiness !== 'blocked' &&
+      !['area', 'time_conflict', 'modification_target', 'direction'].includes(
+        classification.missingRequirement ?? '',
+      ) &&
+      classification.createTripInput?.startArea &&
+      (classification.activities?.length ?? 0) > 0
+    ) {
+      classification = { ...classification, intent: 'create_trip', clarificationQuestion: null };
+    }
     const form = state.formTripContext;
     const mod = classification.modification;
     // A stop selected in the UI is authoritative session input. Do not feed its
@@ -82,7 +103,7 @@ export function createClassifyIntentNode(
     const hasStructuredChoice = Boolean(state.structuredChoice);
     const answerCuisine =
       structuredOption?.mealCuisine ??
-      (!hasStructuredChoice ? (state.mealCuisine ?? extractMealCuisine(text)) : undefined);
+      (!hasStructuredChoice ? (extractMealCuisine(text) ?? state.mealCuisine) : undefined);
     const answerDelegates =
       structuredOption?.mealPreference === 'local_specialty' ||
       (!hasStructuredChoice &&
@@ -90,7 +111,7 @@ export function createClassifyIntentNode(
     const answersPendingMeal =
       state.pendingQuestion?.target === 'meal' &&
       (Boolean(answerCuisine) || answerDelegates) &&
-      classification.intent !== 'qa';
+      (Boolean(structuredOption) || classification.intent !== 'qa');
     const hasStructuredMealChoice = Boolean(
       state.mealCuisine || state.mealPreference || state.structuredChoice,
     );
@@ -113,13 +134,12 @@ export function createClassifyIntentNode(
     const classifiedTripInput = classification.createTripInput
       ? {
           ...classification.createTripInput,
+          text: requestText,
           // The user's explicit area outranks an inferred area returned by the LLM.
           ...(explicitArea ? { startArea: explicitArea } : {}),
         }
       : null;
-    // The LLM intentionally returns only the clarification payload. Build the
-    // pending request from the deterministic extractor as a lossless fallback
-    // so the next structured choice still has the original context.
+    // Retain the original request even when the interpreter asks a question.
     const deterministicTripInput = deterministicClassification.createTripInput ?? null;
     // A meal chip is an answerable UI contract: it must always carry a pending
     // question and retain the original trip request.  The LLM can decide that
@@ -128,7 +148,9 @@ export function createClassifyIntentNode(
     // instead of rendering orphaned chips that merely repeat the same prompt.
     const asksForMeal =
       forceMealClarification ||
-      (classification.intent === 'clarify' && classification.clarificationKind === 'meal');
+      (!hasStructuredMealChoice &&
+        classification.intent === 'clarify' &&
+        classification.clarificationKind === 'meal');
     // Checkpoints can be compacted between the question and the answer.  A
     // structured meal choice must still be applied to the traveller's original
     // request, never to the short option id (for example `local_specialty`).
@@ -154,9 +176,9 @@ export function createClassifyIntentNode(
           )
       : null;
     const pendingTripInput =
-      answersPendingMeal && (recoveredPendingTripInput ?? state.pendingCreateTripInput)
+      answersPendingMeal && (state.pendingCreateTripInput ?? recoveredPendingTripInput)
         ? {
-            ...(recoveredPendingTripInput ?? state.pendingCreateTripInput),
+            ...(state.pendingCreateTripInput ?? recoveredPendingTripInput),
             // A follow-up may answer the meal question and explicitly move the
             // plan at the same time ("강남에서 한식으로").
             ...(explicitArea ? { startArea: explicitArea } : {}),
@@ -208,12 +230,18 @@ export function createClassifyIntentNode(
           : state.pendingQuestion;
     const nextPendingTripInput = answersPendingMeal
       ? null
-      : asksForMeal
+      : asksForMeal || classification.intent === 'clarify'
         ? createTripInput
         : classification.intent === 'create_trip'
           ? null
           : state.pendingCreateTripInput;
 
+    // An existing meal selection is context, not permission to generate a new trip.
+    const forcesCreation = !hasActiveTrip || answersPendingMeal;
+    const contextualIntent =
+      hasActiveTrip && hasStructuredMealChoice && classification.clarificationKind === 'meal'
+        ? deterministicClassification.intent
+        : classification.intent;
     return {
       intent: answersPendingMeal
         ? 'create_trip'
@@ -221,15 +249,19 @@ export function createClassifyIntentNode(
           ? 'modify_trip'
           : state.chatIntent === 'trip_summary'
             ? 'summarize_trip'
-            : forcedLocalSpecialty
+            : forcedLocalSpecialty && forcesCreation
               ? 'create_trip'
-              : forcedMealCuisine
+              : forcedMealCuisine && forcesCreation
                 ? 'create_trip'
                 : asksForMeal
                   ? 'clarify'
-                  : classification.intent,
-      clarificationQuestion: asksForMeal ? null : (classification.clarificationQuestion ?? null),
-      clarificationKind: asksForMeal ? 'meal' : (classification.clarificationKind ?? null),
+                  : contextualIntent,
+      clarificationQuestion: classification.clarificationQuestion ?? null,
+      clarificationKind: asksForMeal
+        ? 'meal'
+        : classification.missingRequirement === 'direction'
+          ? 'direction'
+          : (classification.clarificationKind ?? null),
       modification,
       createTripInput,
       pendingQuestion: nextPendingQuestion,

@@ -26,6 +26,7 @@ import {
   placeAlternatives,
   routeLegOverrides,
   completedRouteConstraintFailure,
+  routeFreeTimeWarning,
   completedAreaConstraintFailure,
   missingRequiredPlaceRoles,
   TripsService,
@@ -198,7 +199,7 @@ describe('completedRouteConstraintFailure', () => {
     expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
   });
 
-  it('rejects a five-hour request covered by only one hour of activity', () => {
+  it('accepts a time boundary with free time and discloses its actual last departure', () => {
     const candidate = restaurantCandidate('한식당', '음식점>한식>비빔밥');
     const input: OptimizeRouteInput = {
       travelDate: '2026-09-09',
@@ -221,7 +222,10 @@ describe('completedRouteConstraintFailure', () => {
       },
     ];
 
-    expect(completedRouteConstraintFailure(input, route, false)).toBe('route_constraints');
+    expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
+    expect(routeFreeTimeWarning(input, route)).toContain('14:00');
+    expect(routeFreeTimeWarning(input, route)).toContain('240분');
+    expect(routeFreeTimeWarning(input, route)).toContain('채운 일정은 아닙니다');
   });
 
   it('accepts a normal 13:00 arrival followed by a 14:00 departure', () => {
@@ -465,6 +469,52 @@ function tripFixture(): Trip {
     ),
   } as Trip;
 }
+
+describe('TripsService scoped alternatives', () => {
+  it('keeps same-category, geolocated candidates within the original area and never retries globally', async () => {
+    const trip = tripFixture();
+    trip.preference.area = '성수';
+    const candidate = (
+      id: string,
+      name: string,
+      category: string,
+      rawCategory: string | null,
+    ): Place => ({
+      ...trip.stops[0]!.place,
+      id,
+      name,
+      category,
+      rawCategory,
+    });
+    const local = candidate('local', '성수 커피', 'cafe', '음식점>카페');
+    const outside = candidate('outside', '공덕 커피', 'cafe', '음식점>카페');
+    const restaurant = candidate('restaurant', '씨카페', 'cafe', '음식점>뷔페');
+    const missingCoordinates = { ...local, id: 'missing', location: null };
+    const builder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([local, outside, restaurant, missingCoordinates]),
+    };
+    const createQueryBuilder = jest.fn().mockReturnValue(builder);
+    const filterPlaces = jest
+      .fn()
+      .mockResolvedValue({ applied: true, expanded: false, places: [local] });
+    const service = Object.create(TripsService.prototype) as TripsService;
+    Object.assign(service, {
+      trips: repository<Trip>({ findOne: jest.fn().mockResolvedValue(trip) }),
+      places: repository<Place>({ createQueryBuilder }),
+      spatialAreas: { filterPlaces },
+      placeProvider: { name: 'mock' },
+      ktoProvider: { name: 'mock' },
+    });
+    const result = await service.getStopAlternatives(trip.id, trip.stops[0]!.id, trip.editToken!);
+    expect(filterPlaces).toHaveBeenCalledWith('성수', [local, outside], 0, 0);
+    expect(result.alternatives.map((p) => p.placeId)).toEqual(['local']);
+    expect(createQueryBuilder).toHaveBeenCalledTimes(1);
+    expect(result.alternatives[0]!.description).not.toMatch(/도보 약/);
+  });
+});
 
 describe('TripsService atomic stop editing', () => {
   it('does not mutate persistence when the edited route is infeasible', async () => {

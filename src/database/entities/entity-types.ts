@@ -1,5 +1,5 @@
 export type ProviderMode = 'mock' | 'live';
-export type TripStatus = 'generating' | 'ready' | 'modified' | 'failed';
+export type TripStatus = 'generating' | 'ready' | 'partial' | 'modified' | 'failed';
 
 export interface GeoPoint {
   type: 'Point';

@@ -168,13 +168,7 @@ function missingRequiredActivities(input: CompletionEligibilityInput): string[] 
 export function completedItineraryPublicationValidation(
   input: PublicationValidationInput,
 ): PublicationValidation {
-  const eligibility = completedItineraryEligibility(input);
   const missing = missingRequiredActivities(input);
-  const coverageFailure = eligibility.eligible
-    ? null
-    : eligibility.code === 'INSUFFICIENT_VERIFIED_COVERAGE'
-      ? eligibility.code
-      : null;
   const activityFailure: PublicationFailureCode | null =
     missing.length > 0
       ? missing.includes('meal')
@@ -182,7 +176,6 @@ export function completedItineraryPublicationValidation(
         : 'THEME_EVIDENCE_MISSING'
       : null;
   const failureCodes: PublicationFailureCode[] = [
-    ...(coverageFailure ? [coverageFailure] : []),
     ...(activityFailure ? [activityFailure] : []),
     ...(!input.area.valid ? (['AREA_CONSTRAINTS_VIOLATED'] as const) : []),
     ...(!input.time.valid ? (['ROUTE_CONSTRAINTS_VIOLATED'] as const) : []),
@@ -208,22 +201,9 @@ export function completedItineraryEligibility(input: CompletionEligibilityInput)
       eligible: false;
       code: 'INSUFFICIENT_VERIFIED_COVERAGE' | 'MEAL_EVIDENCE_MISSING' | 'THEME_EVIDENCE_MISSING';
     } {
-  const [startHour = 0, startMinute = 0] = input.startTime.split(':').map(Number);
-  const [endHour = 0, endMinute = 0] = input.endTime.split(':').map(Number);
-  const windowMinutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
-  if (windowMinutes >= 240 && windowMinutes <= 360) {
-    const covered = input.stops.reduce((total, stop) => {
-      const route = stop.inboundRoute;
-      const verifiedTravelMinutes =
-        route && (route.evidence === 'measured' || route.evidence === 'mixed')
-          ? (route.durationMinutes ?? 0)
-          : 0;
-      return total + stop.estimatedStayMinutes + verifiedTravelMinutes;
-    }, 0);
-    if (covered < windowMinutes * 0.6) {
-      return { eligible: false, code: 'INSUFFICIENT_VERIFIED_COVERAGE' };
-    }
-  }
+  // The user's time window is a boundary, not an invented occupancy quota.
+  // Real deadline validity is separately checked by the route validator;
+  // gaps remain explicit free time rather than inflated stay/travel minutes.
   if (input.requestedMeal && !input.stops.some((stop) => stop.stopType === 'meal')) {
     return { eligible: false, code: 'MEAL_EVIDENCE_MISSING' };
   }

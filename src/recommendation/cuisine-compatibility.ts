@@ -36,9 +36,15 @@ export function assessCuisineCompatibility(
 
   const name = candidate.place.name;
   const evidence = `${name} ${candidate.place.rawCategory ?? ''}`;
+  const vegan = /비건|vegan|ビーガン|ヴィーガン/iu;
+  if (requestedCuisines.some((value) => vegan.test(value)) && !vegan.test(evidence)) {
+    return 'mismatch';
+  }
+  const cuisines = requestedCuisines.filter((value) => !vegan.test(value));
+  if (cuisines.length === 0) return 'match';
   let sawKnownCuisine = false;
 
-  for (const requested of requestedCuisines.map(normalizeCuisine)) {
+  for (const requested of cuisines.map(normalizeCuisine)) {
     if (requested === '한식') {
       sawKnownCuisine = true;
       // A specific contradictory dish in the business name is stronger than a broad provider

@@ -93,53 +93,81 @@ export function createClarifyNode() {
                 mealPreference: 'local_specialty' as const,
               },
             ]
-        : state.clarificationQuestion
-          ? []
-          : isKo
+        : state.clarificationKind === 'direction'
+          ? isKo
             ? [
                 {
-                  label: '☕ 성수: 감성 카페 & 팝업 쇼핑',
-                  query: '성수동에서 감성 카페와 소품샵 쇼핑 코스로 짜줘',
+                  label: '🏯 역사·한옥',
+                  query: '역사적인 장소와 한옥을 보고 싶어요',
                   type: 'clarify',
                 },
-                {
-                  label: '🛍️ 홍대/연남: 핫플 투어 & 맛집',
-                  query: '홍대와 연남동 핫플 맛집 & 쇼핑 코스로 짜줘',
-                  type: 'clarify',
-                },
-                {
-                  label: '🏯 서촌/안국: 한옥 산책 & 미식',
-                  query: '서촌과 안국동 경복궁 한옥 산책 & 전통 맛집으로 짜줘',
-                  type: 'clarify',
-                },
-                {
-                  label: '🍜 명동/을지로: K-푸드 & 힙지로',
-                  query: '명동 K-푸드 먹방과 을지로 힙지로 투어로 짜줘',
-                  type: 'clarify',
-                },
+                { label: '🍜 로컬 음식', query: '서울 로컬 음식을 즐기고 싶어요', type: 'clarify' },
+                { label: '☕ 카페·쇼핑', query: '카페와 쇼핑을 즐기고 싶어요', type: 'clarify' },
               ]
             : [
                 {
-                  label: '☕ 聖水: カフェ＆ポップアップ',
-                  query: '聖水洞でカフェとポップアップ巡りプランを作って',
+                  label: '🏯 歴史・韓屋',
+                  query: '歴史的な場所と韓屋を見たいです',
                   type: 'clarify',
                 },
                 {
-                  label: '🛍️ 弘大/延南: トレンド＆グルメ',
-                  query: '弘大と延南洞のグルメ＆ショッピングプランを作って',
+                  label: '🍜 ローカルグルメ',
+                  query: 'ソウルのローカルグルメを楽しみたいです',
                   type: 'clarify',
                 },
                 {
-                  label: '🏯 西村/安国: 韓屋散歩＆伝統',
-                  query: '西村と安国洞の韓屋散歩＆伝統グルメコースを作って',
+                  label: '☕ カフェ・買い物',
+                  query: 'カフェとショッピングを楽しみたいです',
                   type: 'clarify',
                 },
-                {
-                  label: '🍜 明洞/乙支路: 定番Kフード',
-                  query: '明洞の定番グルメと乙支路レトロツアーを作って',
-                  type: 'clarify',
-                },
-              ];
+              ]
+          : state.clarificationQuestion
+            ? []
+            : isKo
+              ? [
+                  {
+                    label: '☕ 성수: 감성 카페 & 팝업 쇼핑',
+                    query: '성수동에서 감성 카페와 소품샵 쇼핑 코스로 짜줘',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🛍️ 홍대/연남: 핫플 투어 & 맛집',
+                    query: '홍대와 연남동 핫플 맛집 & 쇼핑 코스로 짜줘',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🏯 서촌/안국: 한옥 산책 & 미식',
+                    query: '서촌과 안국동 경복궁 한옥 산책 & 전통 맛집으로 짜줘',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🍜 명동/을지로: K-푸드 & 힙지로',
+                    query: '명동 K-푸드 먹방과 을지로 힙지로 투어로 짜줘',
+                    type: 'clarify',
+                  },
+                ]
+              : [
+                  {
+                    label: '☕ 聖水: カフェ＆ポップアップ',
+                    query: '聖水洞でカフェとポップアップ巡りプランを作って',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🛍️ 弘大/延南: トレンド＆グルメ',
+                    query: '弘大と延南洞のグルメ＆ショッピングプランを作って',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🏯 西村/安国: 韓屋散歩＆伝統',
+                    query: '西村と安国洞の韓屋散歩＆伝統グルメコースを作って',
+                    type: 'clarify',
+                  },
+                  {
+                    label: '🍜 明洞/乙支路: 定番Kフード',
+                    query: '明洞の定番グルメと乙支路レトロツアーを作って',
+                    type: 'clarify',
+                  },
+                ];
 
     const structuredActionChips = actionChips.map((chip) => {
       const question = state.pendingQuestion;

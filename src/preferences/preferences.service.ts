@@ -11,6 +11,7 @@ import type {
 } from './preference.types';
 import { normalizeSeoulArea } from './seoul-area-normalizer';
 import { TripPreferenceSchemaValidator } from './trip-preference-schema.validator';
+import { extractExplicitRequestContract, seoulToday } from './explicit-request-contract';
 
 function addDaysSafe(isoDate: string, days: number): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -246,16 +247,23 @@ export class PreferencesService {
     const rawPref = result.preference;
     const rawRecord = rawPref as unknown as Record<string, unknown>;
 
-    const todaySeoul = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Seoul',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
+    const todaySeoul = seoulToday();
+    const explicitContract = extractExplicitRequestContract(input.text);
 
-    let rawStartDate = input.startDate ?? rawPref.startDate ?? input.travelDate ?? todaySeoul;
+    let rawStartDate =
+      explicitContract.startDate ??
+      input.startDate ??
+      input.travelDate ??
+      rawPref.startDate ??
+      todaySeoul;
     let rawEndDate = input.endDate ?? rawPref.endDate ?? null;
     const additionalWarnings: string[] = [];
+    if (rawStartDate < todaySeoul && explicitContract.startDate) {
+      throw new BadRequestException({
+        code: 'PAST_TRAVEL_DATE',
+        message: `명시한 여행 날짜(${rawStartDate})는 과거입니다. 여행 날짜를 다시 선택해 주세요.`,
+      });
+    }
     if (rawStartDate < todaySeoul) {
       additionalWarnings.push(
         `선택된 여행 시작일(${rawStartDate})이 오늘(${todaySeoul})보다 과거이므로, 일정을 오늘(${todaySeoul}) 기준으로 자동 보정했습니다.`,
@@ -271,7 +279,11 @@ export class PreferencesService {
       rawPref.totalDays ?? (rawPref.days && rawPref.days.length > 0 ? rawPref.days.length : 1);
     let endDate = rawEndDate;
 
-    if (input.startDate && input.endDate) {
+    if (
+      input.startDate &&
+      input.endDate &&
+      (!explicitContract.startDate || explicitContract.startDate === input.startDate)
+    ) {
       const diff = diffDaysSafe(input.startDate, input.endDate);
       if (diff >= 0) {
         totalDays = diff + 1;
@@ -282,13 +294,20 @@ export class PreferencesService {
     }
 
     const resolvedPartySize =
+      explicitContract.partySize ??
       input.partySize ??
       rawPref.partySize ??
-      (input.text.includes('2') || input.text.includes('둘') ? 2 : 1);
-    const requestedBudget = input.budget ?? rawPref.totalBudgetKrw ?? rawPref.budget ?? null;
+      (/둘|두\s*명|二人/u.test(input.text) ? 2 : 1);
+    const requestedBudget =
+      explicitContract.budget?.amountKrw ??
+      input.budget ??
+      rawPref.totalBudgetKrw ??
+      rawPref.budget ??
+      null;
+    const budgetScope = explicitContract.budget?.scope ?? input.budgetScope ?? 'total';
     const totalBudget =
-      input.budget !== undefined && input.budgetScope === 'per_person'
-        ? input.budget * resolvedPartySize
+      requestedBudget !== null && budgetScope === 'per_person'
+        ? requestedBudget * resolvedPartySize
         : requestedBudget;
     const dailyBudget = totalBudget ? Math.round(totalBudget / totalDays) : null;
     const resolvedArea = normalizeSeoulArea(input.startArea ?? rawPref.area ?? '서울');
@@ -300,6 +319,7 @@ export class PreferencesService {
     const synchronizedDays: DayTripPreference[] = [];
     const sourceDays = rawPref.days && rawPref.days.length > 0 ? rawPref.days : [];
     const firstSourceDay = sourceDays[0];
+    const activityWindow = totalDays === 1 ? explicitContract.activityWindow : undefined;
 
     for (let i = 0; i < totalDays; i++) {
       const dayNum = i + 1;
@@ -307,14 +327,16 @@ export class PreferencesService {
       const existing = sourceDays[i];
 
       const dayStartTime =
-        dayNum === 1
+        activityWindow?.startTime ??
+        (dayNum === 1
           ? (input.startTime ?? existing?.startTime ?? rawPref.startTime ?? '13:00')
-          : (existing?.startTime ?? '10:30');
+          : (existing?.startTime ?? '10:30'));
 
       const dayEndTime =
-        dayNum === totalDays
+        activityWindow?.endTime ??
+        (dayNum === totalDays
           ? (input.endTime ?? existing?.endTime ?? rawPref.endTime ?? '20:30')
-          : (existing?.endTime ?? '21:00');
+          : (existing?.endTime ?? '21:00'));
 
       const rawInterests = existing?.interests ?? rawPref.interests ?? ['cafe', 'culture'];
       const normalizedRawInterests = rawInterests
@@ -330,17 +352,24 @@ export class PreferencesService {
         sourceMealWindows,
         dayNum === 1 ? directMealWindows : [],
       ).map((meal) => {
+        // Delegating the cuisine does not waive an explicit dietary restriction.
+        const dietary = /비건|vegan|ビーガン|ヴィーガン/iu.test(input.text) ? ['비건'] : [];
         if (input.mealPreference === 'local_specialty') {
-          return { ...meal, cuisinePreferences: [] };
+          return { ...meal, cuisinePreferences: dietary };
         }
         // A clarification selection changes only the cuisine of an existing
         // meal promise. It never appends a dinner or replaces the source text.
         if (input.mealCuisine) {
-          return { ...meal, cuisinePreferences: [selectedCuisine(input.mealCuisine)] };
+          return { ...meal, cuisinePreferences: [...dietary, selectedCuisine(input.mealCuisine)] };
         }
-        return meal;
+        return {
+          ...meal,
+          cuisinePreferences: [...new Set([...dietary, ...(meal.cuisinePreferences ?? [])])],
+        };
       });
-      const reconciledEndTime = endTimeCoveringMeals(dayEndTime, mergedMealWindows, input);
+      const reconciledEndTime = activityWindow
+        ? dayEndTime
+        : endTimeCoveringMeals(dayEndTime, mergedMealWindows, input);
       const dayAnchorPlace = existing?.anchorPlace ?? (dayNum === 1 ? rawPref.anchorPlace : null);
       synchronizedDays.push({
         dayNumber: dayNum,
@@ -349,7 +378,10 @@ export class PreferencesService {
         area: existing?.area ? normalizeSeoulArea(existing.area) : resolvedArea,
         startTime: dayStartTime,
         endTime: reconciledEndTime,
-        dailyBudgetKrw: existing?.dailyBudgetKrw ?? dailyBudget,
+        dailyBudgetKrw:
+          input.budget !== undefined || explicitContract.budget
+            ? dailyBudget
+            : (existing?.dailyBudgetKrw ?? dailyBudget),
         startAnchor:
           existing?.startAnchor ??
           (rawRecord.startAnchor as never) ??
@@ -417,8 +449,14 @@ export class PreferencesService {
           : (input.companions ?? rawPref.companions ?? null),
       pace: input.pace === 'standard' ? 'balanced' : (input.pace ?? rawPref.pace ?? null),
       area: resolvedArea,
-      startTime: input.startTime ?? firstDay?.startTime ?? rawPref.startTime ?? '13:00',
-      endTime: input.endTime ?? firstDay?.endTime ?? rawPref.endTime ?? '20:30',
+      startTime:
+        activityWindow?.startTime ??
+        input.startTime ??
+        firstDay?.startTime ??
+        rawPref.startTime ??
+        '13:00',
+      endTime:
+        activityWindow?.endTime ?? input.endTime ?? firstDay?.endTime ?? rawPref.endTime ?? '20:30',
       budget: totalBudget,
       interests: [...new Set(synchronizedDays.flatMap((day) => day.interests))],
       anchorPlace:

@@ -1,6 +1,31 @@
-import { PlaceNormalizer, normalizeNaverLocalItem } from './place-normalizer';
+import {
+  PlaceNormalizer,
+  normalizeNaverLocalItem,
+  resolveVerifiedPlaceCategory,
+} from './place-normalizer';
 
 describe('NAVER place normalization', () => {
+  it('uses source category rather than a stale shopping classification for a restaurant', () => {
+    expect(
+      resolveVerifiedPlaceCategory({
+        name: '이문설농탕',
+        category: 'shopping',
+        rawCategory: '음식점>한식>곰탕,설렁탕',
+      }),
+    ).toBe('restaurant');
+    expect(
+      resolveVerifiedPlaceCategory({
+        name: '롯데시티호텔마포 씨카페',
+        category: 'cafe',
+        rawCategory: '음식점>뷔페',
+      }),
+    ).toBe('restaurant');
+  });
+  it('does not infer cafe classification from an establishment name', () => {
+    expect(
+      resolveVerifiedPlaceCategory({ name: '씨카페', category: 'restaurant', rawCategory: null }),
+    ).toBe('restaurant');
+  });
   it.each([
     ['홍대 스터디카페', '음식점>카페', 'study'],
     ['집중 공간', '서비스>스터디 카페', 'study'],

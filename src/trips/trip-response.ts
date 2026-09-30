@@ -7,6 +7,11 @@ import { verifiedPlacePrice } from '../providers/place/place-price-evidence';
 import { localizePlaceName } from './place-name-localizer';
 import { findVerifiedAirport, type AirportInfo } from '../common/constants/airports.registry';
 import {
+  assessExplicitRequestContract,
+  type ExplicitRequestContract,
+  type RequestContractAssessment,
+} from '../preferences/explicit-request-contract';
+import {
   tripSafetyConstraints,
   stopAccessibilitySafety,
   type SafetyAssessment,
@@ -110,6 +115,8 @@ export interface AirportTransferDto {
 }
 
 export interface TripDto {
+  explicitRequestContract?: ExplicitRequestContract;
+  contractAssessment?: RequestContractAssessment;
   id: string;
   isEditable?: boolean;
   status: string;
@@ -195,6 +202,11 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
       : 'ja';
   const requestedSafetyConstraints = safetyRequests(prefJson.safetyConstraints);
   const airportBoundaryTransfers = airportTransfers(prefJson, rawDays, responseLocale);
+  const explicitRequestContract = prefJson.explicitRequestContract as
+    ExplicitRequestContract | undefined;
+  const contractAssessment = explicitRequestContract
+    ? assessExplicitRequestContract(explicitRequestContract)
+    : undefined;
 
   // Older generated trips may already have a persisted airport stop. Hide it
   // from the visitable-stop contract as well; the airport boundary below is
@@ -305,7 +317,8 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
   return {
     id: trip.id,
     isEditable,
-    status: trip.status,
+    status: contractAssessment?.status === 'partial' ? 'partial' : trip.status,
+    ...(explicitRequestContract ? { explicitRequestContract, contractAssessment } : {}),
     date: trip.travelDate,
     startDate,
     endDate,

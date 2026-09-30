@@ -30,7 +30,12 @@ import {
   type CrowdObservation,
   type CrowdProvider,
 } from '../providers/crowd/crowd-provider';
-import { PlaceNormalizer } from '../providers/place/place-normalizer';
+import { PlaceNormalizer, resolveVerifiedPlaceCategory } from '../providers/place/place-normalizer';
+import { matchesExactPlaceIdentity } from '../providers/place/place-identity';
+import {
+  extractExplicitRequestContract,
+  assessExplicitRequestContract,
+} from '../preferences/explicit-request-contract';
 import { PLACE_PROVIDER, type PlaceProvider } from '../providers/place/place-provider';
 import { PlaceCandidateSearchService } from '../providers/place/place-candidate-search.service';
 import { PlaceDeduplicator } from '../providers/place/place-deduplicator';
@@ -103,21 +108,7 @@ import {
 } from '../providers/place/place-search-diagnostics';
 
 function matchesPlaceName(query: string, placeName: string): boolean {
-  const q = query.toLowerCase().replace(/\s+/g, '');
-  const n = placeName.toLowerCase().replace(/\s+/g, '');
-  if (q.includes('리움') || q.includes('リウム') || q.includes('leeum')) {
-    return n.includes('리움') || n.includes('leeum');
-  }
-  if (q.includes('서울숲')) {
-    return n.includes('서울숲') || n.includes('seoulforest');
-  }
-  if (q.includes('경복궁')) {
-    return n.includes('경복궁');
-  }
-  if (q.includes('서촌')) {
-    return n.includes('서촌') || n.includes('통인') || n.includes('체부') || n.includes('옥인');
-  }
-  return n.includes(q) || q.includes(n);
+  return matchesExactPlaceIdentity(query, placeName);
 }
 
 export function isAreaConstraint(name: string, dayArea: string): boolean {
@@ -152,23 +143,8 @@ export function completedRouteConstraintFailure(
   input: OptimizeRouteInput,
   route: RouteStopPlan[],
   enforceMealCuisine: boolean,
-  providerBackedTravelMinutes = 0,
 ): 'route_constraints' | 'meal_cuisine' | null {
   if (!new RouteConstraintValidator().validate(input, route).valid) {
-    return 'route_constraints';
-  }
-
-  const tripWindowMinutes =
-    (new Date(`${input.travelDate}T${input.endTime}:00+09:00`).getTime() -
-      new Date(`${input.travelDate}T${input.startTime}:00+09:00`).getTime()) /
-    60_000;
-  const coveredMinutes =
-    route.reduce((sum, stop) => sum + stop.estimatedStayMinutes, 0) + providerBackedTravelMinutes;
-  if (
-    tripWindowMinutes >= 4 * 60 &&
-    tripWindowMinutes <= 6 * 60 &&
-    coveredMinutes < tripWindowMinutes * 0.6
-  ) {
     return 'route_constraints';
   }
 
@@ -331,14 +307,25 @@ function providerUnavailableFailure(
   });
 }
 
-function providerBackedTravelMinutes(routes: Array<RouteLegEstimate | null>): number {
-  return routes.reduce(
-    (sum, route) =>
-      route?.evidence === 'measured' || route?.evidence === 'mixed'
-        ? sum + route.durationMinutes
-        : sum,
-    0,
-  );
+export function routeFreeTimeWarning(
+  input: Pick<OptimizeRouteInput, 'travelDate' | 'endTime'>,
+  route: RouteStopPlan[],
+  locale: 'ko' | 'ja' = 'ko',
+): string | null {
+  if (route.length === 0) return null;
+  const lastLeave = Math.max(...route.map((stop) => new Date(stop.leaveAt).getTime()));
+  const end = new Date(`${input.travelDate}T${input.endTime}:00+09:00`).getTime();
+  const remaining = Math.floor((end - lastLeave) / 60_000);
+  if (!Number.isFinite(remaining) || remaining <= 0) return null;
+  const leaveTime = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(lastLeave));
+  return locale === 'ja'
+    ? `観光日程は${leaveTime}に終了し、指定終了時刻${input.endTime}まで${remaining}分の自由時間が残ります。この時間を活動や未確認の移動時間で埋めた旅程ではありません。`
+    : `관광 일정은 ${leaveTime}에 끝나며 요청한 종료 시각 ${input.endTime}까지 ${remaining}분의 자유 시간이 남습니다. 이 시간을 활동이나 미확인 이동시간으로 채운 일정은 아닙니다.`;
 }
 
 function sanitizeVerifiedDescription(raw: string, maxLength = 500): string | null {
@@ -379,6 +366,14 @@ export function placeAlternatives(name: string): string[] {
     .split(/\s*(?:또는|혹은|or|\/|\|)\s*/iu)
     .map((value) => value.trim())
     .filter(Boolean);
+  if (
+    /^(?:경복궁|景福宮|gyeongbokgung(?: palace)?)(?:\s*(?:자체|そのもの|itself))?$/iu.test(
+      name.trim(),
+    )
+  ) {
+    alternatives.push('경복궁', 'Gyeongbokgung Palace');
+  }
+  if (/^(?:서울숲|ソウルの森|seoul forest)$/iu.test(name.trim())) alternatives.push('서울숲');
   if (/리움|リウム|leeum/iu.test(name)) {
     alternatives.push('리움미술관', 'Leeum Museum');
   }
@@ -508,13 +503,10 @@ export class TripsService {
     dto: GenerateTripDto,
     incomingEditToken?: string,
   ): Promise<TripApiResponse> {
+    const explicitRequestContract = extractExplicitRequestContract(dto.text);
     const parsed = await this.preferences.parse(dto);
-    // Discovery radius and route optimization are implementation parameters,
-    // not promises the traveller explicitly chose. Start with the resilient
-    // range/route policy so ordinary requests do not fail just because the
-    // first small-radius candidate set cannot form a route. Semantic choices
-    // such as cuisine and explicit visitable themes remain strict.
-    const relaxations = new Set(['search_radius', 'route_constraints', ...(dto.relaxations ?? [])]);
+    // Relax a constraint only after the traveller explicitly approves recovery.
+    const relaxations = new Set(dto.relaxations ?? []);
     const explicitlyRequestedArea = dto.startArea?.trim() || null;
     // A classifier/parser may carry an inferred day area alongside the user's
     // explicit `startArea`. For a single-day request the explicit value is the
@@ -526,7 +518,8 @@ export class TripsService {
         message: '서울 내 여행 지역을 입력해 주세요.',
       });
     }
-    const travelDate = this.resolveTravelDate(dto.travelDate, dto.text);
+    const travelDate =
+      explicitRequestContract.startDate ?? this.resolveTravelDate(dto.travelDate, dto.text);
     const parsedTripDays =
       parsed.preference.days && parsed.preference.days.length > 0
         ? parsed.preference.days
@@ -597,17 +590,18 @@ export class TripsService {
           preferences: parsed.preference.preferences,
           validatedJson: {
             ...parsed.preference,
+            explicitRequestContract,
             // Keep explicit direction separate from the legacy generic `airport`
             // field. The response can then render only a first-day arrival and a
             // final-day departure boundary.
             ...(dto.arrivalAirport ? { arrivalAirport: dto.arrivalAirport } : {}),
             ...(dto.departureAirport ? { departureAirport: dto.departureAirport } : {}),
             safetyConstraints: resolveSafetyRequests(dto.text, dto.safetyConstraints),
-            ...(dto.budget !== undefined
+            ...(dto.budget !== undefined || explicitRequestContract.budget
               ? {
                   budgetInput: {
-                    amountKrw: dto.budget,
-                    scope: dto.budgetScope ?? 'total',
+                    amountKrw: explicitRequestContract.budget?.amountKrw ?? dto.budget!,
+                    scope: explicitRequestContract.budget?.scope ?? dto.budgetScope ?? 'total',
                   },
                 }
               : {}),
@@ -937,7 +931,7 @@ export class TripsService {
               source: place.source,
               sourcePlaceId: place.sourcePlaceId,
               name: place.name,
-              category: place.category,
+              category: resolveVerifiedPlaceCategory(place),
               address: place.address,
               roadAddress: place.roadAddress,
               location: place.location,
@@ -965,7 +959,7 @@ export class TripsService {
               source: anchorEntity.source,
               sourcePlaceId: anchorEntity.sourcePlaceId,
               name: anchorEntity.name,
-              category: anchorEntity.category,
+              category: resolveVerifiedPlaceCategory(anchorEntity),
               address: anchorEntity.address,
               roadAddress: anchorEntity.roadAddress,
               location: anchorEntity.location,
@@ -1301,7 +1295,41 @@ export class TripsService {
             candidates: orderedCandidates,
             preserveOrder: true,
           });
-          if (repairedRoute.length === orderedCandidates.length) route = repairedRoute;
+          if (repairedRoute.length === orderedCandidates.length) {
+            route = repairedRoute;
+            continue;
+          }
+          // A full greedy route may contain duplicate optional activities.
+          // Replace one only when every already-covered theme and fixed stop
+          // survives. Otherwise a later theme repair can undo an earlier one.
+          const currentCandidates = orderedCandidates.slice(0, -1);
+          for (let index = currentCandidates.length - 1; index >= 0; index -= 1) {
+            const old = currentCandidates[index]!;
+            if (
+              old.place.isAnchor ||
+              old.place.fixedAppointment ||
+              route[index]?.stopType === 'meal'
+            )
+              continue;
+            const replacement = currentCandidates.map((item, i) =>
+              i === index ? candidate : item,
+            );
+            const preservesThemes = requestedThemes.every(
+              (required) =>
+                !currentCandidates.some((item) => candidateSatisfiesTheme(required, item)) ||
+                replacement.some((item) => candidateSatisfiesTheme(required, item)),
+            );
+            if (!preservesThemes) continue;
+            const result = this.routeOptimizer.optimize({
+              ...routeInput,
+              candidates: replacement,
+              preserveOrder: true,
+            });
+            if (result.length === replacement.length) {
+              route = result;
+              break;
+            }
+          }
         }
 
         if (route.length === 0) {
@@ -1482,7 +1510,6 @@ export class TripsService {
           finalContractInput,
           route,
           !relaxations.has('meal_cuisine'),
-          providerBackedTravelMinutes(legEvidence.routes),
         );
         if (completedConstraintFailure === 'meal_cuisine') {
           throw new UnprocessableEntityException({
@@ -1510,6 +1537,9 @@ export class TripsService {
             }),
           });
         }
+
+        const freeTimeWarning = routeFreeTimeWarning(finalContractInput, route, dto.locale ?? 'ko');
+        if (freeTimeWarning) routeWarnings.push(freeTimeWarning);
 
         const indoorFallbacks = uniqueDayCandidates.filter(
           (c) => c.category === 'museum' || c.category === 'cafe',
@@ -1671,8 +1701,8 @@ export class TripsService {
           }),
           area: areaVerificationByDay.get(day.dayNumber) ?? { valid: false },
           // RouteConstraintValidator and completedRouteConstraintFailure have
-          // already passed for every stop at this publication boundary. The
-          // coverage gate below remains part of the structured time result.
+          // already passed for every stop at this publication boundary.
+          // Remaining free time is disclosed, not an invented hard failure.
           time: { valid: true },
         });
         if (publicationValidation.publicationStatus !== 'ready') {
@@ -1930,7 +1960,18 @@ export class TripsService {
       }
 
       const totalEstimatedCost = completeRouteCost(savedStops);
-      trip.status = 'ready';
+      const requestedFullSchedule =
+        /(?:꽉\s*채워|빈틈\s*없이|빈\s*시간\s*없이|最後まで.*(?:埋め|いっぱい)|隙間なく)/u.test(
+          dto.text,
+        );
+      const unfilledSchedule =
+        requestedFullSchedule &&
+        routeWarnings.some((warning) => /자유 시간|自由時間/u.test(warning));
+      trip.status =
+        assessExplicitRequestContract(explicitRequestContract).status === 'partial' ||
+        unfilledSchedule
+          ? 'partial'
+          : 'ready';
       trip.totalEstimatedCost = totalEstimatedCost;
       await this.trips.save(trip);
 
@@ -2391,7 +2432,7 @@ export class TripsService {
     const currentPlaceIds = new Set(trip.stops.map((s) => s.placeId));
     const targetPlace = stop.place;
     const targetDistrict = targetPlace.district || trip.preference?.area || '중구';
-    const targetCategory = targetPlace.category;
+    const targetCategory = resolveVerifiedPlaceCategory(targetPlace);
     const allowedSources = allowedPlaceSourcesForTrip(
       trip.providerMode,
       this.placeProvider.name,
@@ -2407,43 +2448,33 @@ export class TripsService {
     }
     queryBuilder.andWhere('p.source IN (:...allowedSources)', { allowedSources });
 
-    if (targetCategory) {
-      queryBuilder.andWhere('(p.category = :cat OR p.district = :dist)', {
-        cat: targetCategory,
-        dist: targetDistrict,
-      });
-    } else {
-      queryBuilder.andWhere('p.district = :dist', { dist: targetDistrict });
-    }
+    queryBuilder.andWhere('p.district = :dist', { dist: targetDistrict });
 
     queryBuilder.andWhere(
       "NOT (p.name ILIKE '%DMZ%' OR p.name ILIKE '%판문점%' OR p.name ILIKE '%통일전망대%' OR p.name ILIKE '%제1땅굴%' OR p.name ILIKE '%제2땅굴%' OR p.name ILIKE '%제3땅굴%' OR p.name ILIKE '%제4땅굴%' OR p.name ILIKE '%도라산%' OR p.name ILIKE '%임진각%' OR p.name ILIKE '%탈북%' OR (p.name ILIKE '%북한%' AND p.name NOT ILIKE '%북한산%'))",
     );
 
-    let candidates = await queryBuilder.take(20).getMany();
-
-    if (candidates.length < 3 && currentPlaceIds.size > 0) {
-      candidates = await this.places
-        .createQueryBuilder('p')
-        .where('p.id NOT IN (:...excludeIds)', {
-          excludeIds: Array.from(currentPlaceIds),
-        })
-        .andWhere('p.source IN (:...allowedSources)', { allowedSources })
-        .andWhere(
-          "NOT (p.name ILIKE '%DMZ%' OR p.name ILIKE '%판문점%' OR p.name ILIKE '%통일전망대%' OR p.name ILIKE '%제1땅굴%' OR p.name ILIKE '%제2땅굴%' OR p.name ILIKE '%제3땅굴%' OR p.name ILIKE '%제4땅굴%' OR p.name ILIKE '%도라산%' OR p.name ILIKE '%임진각%' OR p.name ILIKE '%탈북%' OR (p.name ILIKE '%북한%' AND p.name NOT ILIKE '%북한산%'))",
-        )
-        .take(15)
-        .getMany();
-    }
+    let candidates = await queryBuilder.take(100).getMany();
 
     candidates = candidates.filter(
       (p) =>
+        p.location !== null &&
+        (!targetCategory || resolveVerifiedPlaceCategory(p) === targetCategory) &&
         !isNorthKoreaRelated(p.name) &&
         !isNorthKoreaRelated(p.category) &&
         !isNorthKoreaRelated(p.rawCategory) &&
         !isNorthKoreaRelated(p.address) &&
         !isNorthKoreaRelated(p.roadAddress),
     );
+    const scoped = await this.spatialAreas.filterPlaces(
+      trip.preference?.area || targetDistrict,
+      candidates,
+      0,
+      0,
+    );
+    candidates = scoped.applied
+      ? scoped.places
+      : candidates.filter((p) => p.district === targetDistrict);
 
     const results = candidates.map((p) => {
       const verifiedPrice = verifiedPlacePrice(p.estimatedCostKrw, p.priceEvidence);
@@ -2475,20 +2506,18 @@ export class TripsService {
         p.rawPayload?.summary ||
         '') as string;
       const cleanOverview = rawOverview.replace(/<[^>]+>/g, '').trim();
-      const walkMins = distanceMeters != null ? Math.max(1, Math.round(distanceMeters / 70)) : null;
-
       const description =
         cleanOverview ||
-        `${p.name}은(는) ${targetPlace.name} 인근${walkMins ? `(도보 약 ${walkMins}분)` : ''}에 위치한 ${p.category || '인기'} 장소로, 이동 동선과 일정 흐름에 자연스럽게 어울리는 대안 후보입니다.`;
+        `${p.name}: 같은 지역·유형의 대체 후보입니다. 실제 보행 경로와 소요 시간은 아직 확인하지 않았습니다.`;
 
       return {
         placeId: p.id,
         name: p.name,
-        category: p.category || p.rawCategory || '관광지',
+        category: resolveVerifiedPlaceCategory(p) || '장소',
         address: p.address || p.roadAddress || '서울시',
         roadAddress: p.roadAddress ?? null,
-        latitude: p.location ? p.location.coordinates[1] : 37.5665,
-        longitude: p.location ? p.location.coordinates[0] : 126.978,
+        latitude: p.location!.coordinates[1],
+        longitude: p.location!.coordinates[0],
         estimatedCost,
         priceEvidence,
         reason: `${targetPlace.name} 대신 방문하기 좋은 ${p.category || '명소'}`,

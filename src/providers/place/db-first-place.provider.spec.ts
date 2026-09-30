@@ -130,4 +130,70 @@ describe('DB first itinerary search', () => {
       'NAVER unavailable',
     );
   });
+
+  it('retries an empty dietary query without dropping the dietary term or mutating cache', async () => {
+    const { provider, search } = setup([]);
+    const cached = { places: [] };
+    search.mockResolvedValue(cached);
+    await provider.search({ area: '이태원', role: 'restaurant', query: '비건 맛집' });
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenNthCalledWith(1, {
+      area: '이태원',
+      role: 'restaurant',
+      query: '비건 맛집',
+    });
+    expect(search).toHaveBeenNthCalledWith(2, {
+      area: '이태원',
+      role: 'restaurant',
+      query: '비건',
+    });
+    expect(cached.places).toEqual([]);
+  });
+
+  it('retries when a nonempty NAVER response is eliminated by the verified role gate', async () => {
+    const { provider, search } = setup([]);
+    search
+      .mockResolvedValueOnce({
+        places: [
+          {
+            provider: 'naver-local',
+            providerMode: 'live',
+            sourcePlaceId: 'park',
+            sourcePlaceIdKind: 'provider',
+            name: '이태원 공원',
+            rawCategory: '공원',
+            address: '서울 용산구',
+            roadAddress: null,
+            longitude: 126.99,
+            latitude: 37.53,
+            rawPayload: {},
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        places: [
+          {
+            provider: 'naver-local',
+            providerMode: 'live',
+            sourcePlaceId: 'vegan',
+            sourcePlaceIdKind: 'provider',
+            name: '이태원 비건 식당',
+            rawCategory: '음식점',
+            address: '서울 용산구',
+            roadAddress: null,
+            longitude: 126.99,
+            latitude: 37.53,
+            rawPayload: {},
+          },
+        ],
+      });
+    const result = await provider.search({
+      area: '이태원',
+      role: 'restaurant',
+      query: '비건 맛집',
+    });
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenLastCalledWith({ area: '이태원', role: 'restaurant', query: '비건' });
+    expect(result.places.map((candidate) => candidate.sourcePlaceId)).toEqual(['vegan']);
+  });
 });

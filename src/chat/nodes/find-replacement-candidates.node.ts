@@ -8,11 +8,21 @@ import type {
 } from '../chat-state';
 import { verifiedPlacePrice } from '../../providers/place/place-price-evidence';
 import { isNorthKoreaRelated } from '../../common/utils/security-filter.util';
+import { extractExplicitSeoulArea } from '../chat-intent';
+import {
+  knownSeoulSearchArea,
+  seoulDistrictForArea,
+} from '../../providers/place/seoul-area-centers';
+import { resolveVerifiedPlaceCategory } from '../../providers/place/place-normalizer';
 
 type ReplacementCategory = 'cafe' | 'restaurant' | 'shopping' | 'culture' | 'attraction';
 
 function requestedCategory(text: string, fallback?: string | null): ReplacementCategory | null {
   const value = `${text} ${fallback ?? ''}`.normalize('NFKC').toLowerCase();
+  // A requested destination category outranks the name/category of the old stop.
+  if (/(?:식당|맛집|레스토랑|restaurant|食堂|レストラン)(?:[으]?로|に)/u.test(value)) {
+    return 'restaurant';
+  }
   if (/카페|커피|디저트|베이커리|cafe|coffee|カフェ|喫茶/.test(value)) return 'cafe';
   if (/식당|맛집|고기|곱창|레스토랑|restaurant|グルメ|食堂|焼肉/.test(value)) {
     return 'restaurant';
@@ -27,17 +37,8 @@ function requestedCategory(text: string, fallback?: string | null): ReplacementC
 
 function matchesCategory(place: Place, category: ReplacementCategory | null): boolean {
   if (!category) return true;
-  const value = `${place.name} ${place.category ?? ''} ${place.rawCategory ?? ''}`
-    .normalize('NFKC')
-    .toLowerCase();
-  const patterns: Record<ReplacementCategory, RegExp> = {
-    cafe: /카페|커피|디저트|베이커리|cafe|coffee|カフェ|喫茶/,
-    restaurant: /음식|식당|한식|일식|양식|고기|곱창|갈비|restaurant|グルメ|食堂|焼肉/,
-    shopping: /쇼핑|상점|편집|소품|shop|shopping|ショップ|買い物/,
-    culture: /문화|미술|박물|갤러리|공연|museum|gallery|美術|博物/,
-    attraction: /관광|명소|공원|attraction|観光|公園/,
-  };
-  return patterns[category].test(value);
+  const verified = resolveVerifiedPlaceCategory(place);
+  return verified === category || (category === 'attraction' && verified === 'park');
 }
 
 function distanceMeters(left?: Place['location'], right?: Place['location']): number | undefined {
@@ -127,12 +128,35 @@ export function createFindReplacementCandidatesNode(
 
     // Action: replace -> find up to 3 high quality alternatives
     const currentPlaceIds = new Set((trip.stops || []).map((s) => s.placeId));
-    const targetDistrict = targetPlace?.district || trip.preference?.area || '중구';
-    const targetCategory = targetPlace?.category;
+    const targetCategory = targetPlace ? resolveVerifiedPlaceCategory(targetPlace) : null;
     const repQuery = state.modification.replacementQuery?.trim();
     const lastMessage = state.messages[state.messages.length - 1];
-    const requestText = typeof lastMessage?.content === 'string' ? lastMessage.content : '';
-    const category = requestedCategory(requestText, targetCategory);
+    const requestText =
+      repQuery || (typeof lastMessage?.content === 'string' ? lastMessage.content : '');
+    const category = requestedCategory(requestText) ?? requestedCategory('', targetCategory);
+    const requestedArea = extractExplicitSeoulArea(requestText);
+    const station = /홍대입구역|弘大入口駅/u.test(requestText) ? '홍대입구역' : requestedArea;
+    const requestedCenter = station ? knownSeoulSearchArea(station) : null;
+    const targetDistrict = requestedArea
+      ? seoulDistrictForArea(requestedArea)
+      : targetPlace?.district || trip.preference?.area;
+    const walkLimit = requestText.match(/(?:도보|徒歩|walk(?:ing)?)\s*(\d{1,2})\s*(?:분|分|min)/iu);
+    const radiusMeters = walkLimit ? Number(walkLimit[1]) * 70 : requestedCenter?.radiusMeters;
+    const centerLocation: Place['location'] = requestedCenter
+      ? {
+          type: 'Point' as const,
+          coordinates: [requestedCenter.longitude, requestedCenter.latitude],
+        }
+      : targetPlace?.location;
+    if (!targetDistrict || (requestedArea && !requestedCenter)) {
+      return {
+        responseMessage: isKo
+          ? '요청 지역의 위치를 검증할 수 없어 대체 장소를 제안하지 않았습니다. 정확한 지역을 알려 주세요.'
+          : '指定エリアの位置を確認できないため代替スポットを提案できません。エリアを確認してください。',
+        status: 'failed',
+        errorCode: 'REPLACEMENT_AREA_UNVERIFIED',
+      };
+    }
 
     const qb = placesRepo.createQueryBuilder('p');
 
@@ -153,6 +177,16 @@ export function createFindReplacementCandidatesNode(
     );
 
     qb.andWhere('p.district = :dist', { dist: targetDistrict });
+    if ((requestedArea || walkLimit) && centerLocation && radiusMeters != null) {
+      qb.andWhere(
+        'ST_DWithin(p.location, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography, :radiusMeters)',
+        {
+          longitude: centerLocation.coordinates[0],
+          latitude: centerLocation.coordinates[1],
+          radiusMeters,
+        },
+      );
+    }
 
     let candidates = await qb.take(200).getMany();
 
@@ -161,7 +195,10 @@ export function createFindReplacementCandidatesNode(
         !isNorthKoreaRelated(p.name) &&
         !isNorthKoreaRelated(p.category) &&
         !isNorthKoreaRelated(p.address) &&
-        matchesCategory(p, category),
+        matchesCategory(p, category) &&
+        (!(requestedArea || walkLimit) ||
+          (distanceMeters(centerLocation, p.location) != null &&
+            distanceMeters(centerLocation, p.location)! <= (radiusMeters ?? 0))),
     );
 
     if (candidates.length === 0) {
@@ -175,8 +212,8 @@ export function createFindReplacementCandidatesNode(
     }
 
     candidates.sort((left, right) => {
-      const leftDistance = distanceMeters(targetPlace?.location, left.location);
-      const rightDistance = distanceMeters(targetPlace?.location, right.location);
+      const leftDistance = distanceMeters(centerLocation, left.location);
+      const rightDistance = distanceMeters(centerLocation, right.location);
       if (leftDistance == null && rightDistance == null) return left.name.localeCompare(right.name);
       if (leftDistance == null) return 1;
       if (rightDistance == null) return -1;
@@ -185,17 +222,17 @@ export function createFindReplacementCandidatesNode(
 
     const alternatives: ReplacementCandidate[] = candidates.slice(0, 3).map((p) => {
       const priceInfo = verifiedPlacePrice(p.estimatedCostKrw, p.priceEvidence);
-      const measuredDistance = distanceMeters(targetPlace?.location, p.location);
-      const walkMins =
-        measuredDistance != null ? Math.max(1, Math.round(measuredDistance / 70)) : null;
-      const walkStr = walkMins ? ` (도보 약 ${walkMins}분)` : '';
+      const measuredDistance = distanceMeters(centerLocation, p.location);
+      const distanceText = measuredDistance != null ? `${measuredDistance}m` : '';
 
       return {
         placeId: p.id,
         name: p.name,
-        category: p.category || p.rawCategory || '추천 명소',
+        category: resolveVerifiedPlaceCategory(p) || 'unknown',
         distanceMeters: measuredDistance,
-        reason: `${targetPlace?.name || '기존 장소'}와 같은 요청 카테고리의 장소이며${walkStr} 거리입니다. 조용한 분위기는 공식 근거가 없어 확인되지 않았습니다.`,
+        reason: isKo
+          ? `요청 업종과 지역 조건으로 걸렀습니다. ${requestedArea || '기존 장소'} 기준 직선거리 ${distanceText}이며 실제 도보 경로와 조용한 분위기는 미확인입니다.`
+          : `指定カテゴリとエリアの条件で絞り込みました。${requestedArea || '元のスポット'}からの直線距離は${distanceText}です。実際の徒歩ルートと静かな雰囲気は未確認です。`,
         evidenceStatus: priceInfo ? 'verified' : 'unverified',
         estimatedCost: priceInfo?.estimatedCostKrw ?? null,
         address: p.roadAddress || p.address || null,
@@ -213,6 +250,13 @@ export function createFindReplacementCandidatesNode(
       },
       alternatives,
       warnings: [
+        ...(walkLimit
+          ? [
+              isKo
+                ? `도보 ${walkLimit[1]}분 조건은 직선거리 ${radiusMeters}m 이내로 후보를 제한했을 뿐 실제 보행 시간 충족은 검증되지 않았습니다.`
+                : `徒歩${walkLimit[1]}分の条件は直線距離${radiusMeters}m以内の候補に限定しただけで、実際の徒歩時間は未確認です。`,
+            ]
+          : []),
         isKo
           ? `'${stopName}' 장소를 교체하면 새로운 장소와의 이동 시간 및 일정이 자동으로 재계산됩니다.`
           : `「${stopName}」を変更すると新しいスポットとの移動時間と旅程が自動で再計算されます。`,

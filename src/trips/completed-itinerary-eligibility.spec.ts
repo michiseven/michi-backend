@@ -62,7 +62,7 @@ describe('completedItineraryEligibility', () => {
     expect(validation.requiredActivities).toEqual({ status: 'pass', missing: [] });
   });
 
-  it('counts only measured or mixed inbound-route evidence toward 4–6 hour coverage', () => {
+  it('accepts short activities within a larger time window without inflating unverified travel', () => {
     expect(
       completedItineraryEligibility({
         startTime: '13:00',
@@ -71,7 +71,7 @@ describe('completedItineraryEligibility', () => {
         requestedThemes: [],
         stops: [stop({ stay: 60, duration: 240, evidence: 'estimated' })],
       }),
-    ).toEqual({ eligible: false, code: 'INSUFFICIENT_VERIFIED_COVERAGE' });
+    ).toEqual({ eligible: true });
     expect(
       completedItineraryEligibility({
         startTime: '13:00',
@@ -81,6 +81,30 @@ describe('completedItineraryEligibility', () => {
         stops: [stop({ stay: 60, duration: 84, evidence: 'mixed' })],
       }),
     ).toEqual({ eligible: true });
+  });
+  it('publishes a 13–18 cafe and park route taking 150 minutes when all requested roles fit', () => {
+    const validation = completedItineraryPublicationValidation({
+      startTime: '13:00',
+      endTime: '18:00',
+      requestedMeal: false,
+      requestedThemes: ['cafe', 'park'],
+      stops: [stop({ category: 'cafe', stay: 60 }), stop({ category: 'park', stay: 90 })],
+      area: { valid: true },
+      time: { valid: true },
+    });
+    expect(validation.publicationStatus).toBe('ready');
+    expect(validation.failureCodes).toEqual([]);
+    expect(
+      completedItineraryPublicationValidation({
+        startTime: '13:00',
+        endTime: '18:00',
+        requestedMeal: true,
+        requestedThemes: ['cafe', 'park'],
+        stops: [stop({ category: 'cafe', stay: 60 })],
+        area: { valid: true },
+        time: { valid: false, violations: ['deadline'] },
+      }).failureCodes,
+    ).toEqual(['MEAL_EVIDENCE_MISSING', 'ROUTE_CONSTRAINTS_VIOLATED']);
   });
 
   it('requires each explicit theme and a meal stop', () => {

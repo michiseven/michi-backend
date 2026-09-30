@@ -248,7 +248,11 @@ export class ChatService implements OnModuleInit {
     const previousSnapshot = await this.graph.getState({
       configurable: { thread_id: threadId },
     });
-    const locale = dto.locale || (thread.locale as 'ko' | 'ja') || 'ja';
+    const locale = /한국어(?:로)?\s*(?:답|응답|설명|말)|韓国語で/u.test(dto.message)
+      ? 'ko'
+      : /일본어(?:로)?\s*(?:답|응답|설명|말)|日本語で/u.test(dto.message)
+        ? 'ja'
+        : dto.locale || (thread.locale as 'ko' | 'ja') || 'ja';
     const previousState = previousSnapshot.values as ChatState | undefined;
     const cachedRequest = previousState?.recentRequests?.find(
       (request) => request.requestId === dto.requestId,
@@ -321,8 +325,18 @@ export class ChatService implements OnModuleInit {
       // influence intent classification or the next generated itinerary.
       currentTripId: dto.startFreshTrip ? null : dto.currentTripId || thread.tripId || null,
       relaxations: dto.relaxations ?? [],
-      mealPreference: dto.mealPreference ?? null,
-      mealCuisine: dto.mealCuisine ?? null,
+      mealPreference:
+        dto.mealPreference ??
+        (!dto.startFreshTrip
+          ? (previousState?.mealPreference ?? previousState?.createTripInput?.mealPreference)
+          : null) ??
+        null,
+      mealCuisine:
+        dto.mealCuisine ??
+        (!dto.startFreshTrip
+          ? (previousState?.mealCuisine ?? previousState?.createTripInput?.mealCuisine)
+          : null) ??
+        null,
       structuredChoice:
         dto.questionId && dto.optionId
           ? { questionId: dto.questionId, optionId: dto.optionId }
@@ -333,11 +347,12 @@ export class ChatService implements OnModuleInit {
       intent: null,
       modification: (dto.mutationTarget
         ? {
-            action: 'replace' as const,
+            ...previousState?.pendingModification,
+            action: previousState?.pendingModification?.action ?? ('replace' as const),
             targetStopId: dto.mutationTarget.stopId,
             targetStopOrder: dto.mutationTarget.stopOrder,
             targetPlaceName: dto.mutationTarget.placeName,
-            replacementQuery: null,
+            replacementQuery: previousState?.pendingModification?.replacementQuery ?? null,
           }
         : null) as ChatState['modification'],
       createTripInput: null,
@@ -345,6 +360,7 @@ export class ChatService implements OnModuleInit {
         ? {
             pendingQuestion: null,
             pendingCreateTripInput: null,
+            pendingModification: null,
           }
         : {}),
       // A visible form can contain a previous plan. Only apply it when this

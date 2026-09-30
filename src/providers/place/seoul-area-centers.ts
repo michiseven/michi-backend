@@ -13,7 +13,8 @@ const SEOUL_CENTER: SeoulSearchArea = {
 const AREA_CENTERS: Readonly<Record<string, SeoulSearchArea>> = {
   성수: { longitude: 127.0447, latitude: 37.5444, radiusMeters: 3_500 },
   서울숲: { longitude: 127.0374, latitude: 37.5444, radiusMeters: 3_500 },
-  홍대: { longitude: 126.9237, latitude: 37.5563, radiusMeters: 3_500 },
+  홍대: { longitude: 126.9237, latitude: 37.5563, radiusMeters: 1_200 },
+  홍대입구역: { longitude: 126.9237, latitude: 37.5573, radiusMeters: 1_050 },
   마포: { longitude: 126.9018, latitude: 37.5638, radiusMeters: 4_500 },
   합정: { longitude: 126.9138, latitude: 37.5496, radiusMeters: 2_500 },
   연남: { longitude: 126.9227, latitude: 37.566, radiusMeters: 3_000 },

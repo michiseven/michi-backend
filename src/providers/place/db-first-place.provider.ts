@@ -74,7 +74,29 @@ export class DbFirstPlaceProvider implements PlaceProvider {
         places: records,
       };
     }
-    const response = await this.naver.search(request);
+    const initialResponse = await this.naver.search(request);
+    const response = { ...initialResponse, places: [...initialResponse.places] };
+    const variants: Record<string, string[]> = {
+      cafe: ['카페', '찻집'],
+      stroll: ['공원', '산책로'],
+      shopping: ['소품샵', '편집샵'],
+      attraction: ['관광 명소', '역사 명소'],
+    };
+    const alternatives = /비건|vegan/iu.test(request.query)
+      ? [request.query.replace(/\s*맛집/u, '')]
+      : /한옥/u.test(request.query)
+        ? ['한옥마을', '한옥 관광']
+        : (variants[request.role ?? ''] ?? []);
+    const retryRequests = alternatives.filter((query) => query !== request.query).slice(0, 2);
+    // NAVER returns only a small result page. A sparse exact query gets a
+    // bounded retry using the same role and area; dietary terms are retained.
+    if (response.places.length === 0) {
+      for (const query of retryRequests) {
+        const retry = await this.naver.search({ ...request, query });
+        response.places = [...response.places, ...retry.places];
+        if (response.places.length > 0) break;
+      }
+    }
     const normalized = response.places.map(
       (record) =>
         ({
@@ -90,9 +112,39 @@ export class DbFirstPlaceProvider implements PlaceProvider {
         )
         .map((place) => place.id),
     );
-    const found = response.places.filter((record) =>
+    let found = response.places.filter((record) =>
       allowed.has(`${record.provider}:${record.sourcePlaceId}`),
     );
+    // A provider hit is not a usable candidate until it survives the verified
+    // spatial and role gates. Retry this distinct failure mode too; otherwise
+    // a broad first page can incorrectly suppress an exact same-area search.
+    if (initialResponse.places.length > 0 && found.length === 0) {
+      for (const query of retryRequests) {
+        const retry = await this.naver.search({ ...request, query });
+        const retryNormalized = retry.places.map(
+          (record) =>
+            ({
+              ...this.normalizer.normalize(record),
+              id: `${record.provider}:${record.sourcePlaceId}`,
+            }) as Place,
+        );
+        const retryFiltered = await this.spatial.filterCandidateCoordinates(
+          request.area,
+          retryNormalized,
+        );
+        const retryAllowed = new Set(
+          (retryFiltered.applied ? retryFiltered.places : [])
+            .filter((place) =>
+              this.matchesRole(place.category, request.role, place.rawCategory, place.name),
+            )
+            .map((place) => place.id),
+        );
+        found = retry.places.filter((record) =>
+          retryAllowed.has(`${record.provider}:${record.sourcePlaceId}`),
+        );
+        if (found.length > 0) break;
+      }
+    }
     const merged = new Map(
       [...records, ...found].map((record) => [
         `${record.provider}:${record.sourcePlaceId}`,

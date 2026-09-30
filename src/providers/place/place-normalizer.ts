@@ -79,7 +79,7 @@ export function isStudyCafe(name: string | null | undefined, rawCategory?: strin
   return /스터디\s*카페|study\s*caf[eé]|독서실/iu.test(`${name ?? ''} ${rawCategory ?? ''}`);
 }
 
-function normalizeCategory(rawCategory: string | null): string | null {
+export function normalizePlaceCategory(rawCategory: string | null): string | null {
   if (!rawCategory) {
     return null;
   }
@@ -116,6 +116,34 @@ function normalizeCategory(rawCategory: string | null): string | null {
   if (/미술관|박물관|전시|갤러리|화랑|공방|공예|문화|체험/.test(leaf)) return 'culture';
   if (/관광.*명소|명소|유적|궁/.test(leaf)) return 'attraction';
   return leaf.length > 0 ? leaf : null;
+}
+
+/** Provider classification wins over stale derived columns, never over missing evidence. */
+export function resolveVerifiedPlaceCategory(place: {
+  name: string;
+  category?: string | null;
+  rawCategory?: string | null;
+}): string | null {
+  if (isStudyCafe(place.name, place.rawCategory)) return 'study';
+  const fromSource = normalizePlaceCategory(place.rawCategory ?? null);
+  const canonical = new Set([
+    'medical',
+    'cafe',
+    'restaurant',
+    'shopping',
+    'park',
+    'stroll',
+    'culture',
+    'attraction',
+    'leisure',
+    'lodging',
+    'study',
+  ]);
+  if (fromSource && canonical.has(fromSource)) return fromSource;
+  const fromStoredCategory = normalizePlaceCategory(place.category ?? null);
+  return fromStoredCategory && canonical.has(fromStoredCategory)
+    ? fromStoredCategory
+    : (place.category ?? fromSource);
 }
 
 function districtFromAddress(address: string | null): string | null {
@@ -179,7 +207,7 @@ export class PlaceNormalizer {
       name: record.name,
       category: isStudyCafe(record.name, record.rawCategory)
         ? 'study'
-        : normalizeCategory(record.rawCategory),
+        : normalizePlaceCategory(record.rawCategory),
       address: record.address,
       roadAddress: record.roadAddress,
       location,

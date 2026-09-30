@@ -36,6 +36,14 @@ function restaurant(name: string, rawCategory: string | null): RankedCandidate {
 }
 
 describe('cuisine compatibility', () => {
+  it('requires vegan evidence even when the cuisine category matches', () => {
+    expect(assessCuisineCompatibility(restaurant('한식당', '음식점>한식'), ['비건', '한식'])).toBe(
+      'mismatch',
+    );
+    expect(
+      assessCuisineCompatibility(restaurant('비건 한식당', '음식점>한식'), ['비건', '한식']),
+    ).toBe('match');
+  });
   it('rejects a strong Japanese dish name even when NAVER broadly classifies it as Korean', () => {
     expect(
       assessCuisineCompatibility(restaurant('프리미엄 규카츠 규도 마포공덕 본점', '음식점>한식'), [

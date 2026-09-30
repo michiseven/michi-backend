@@ -2,6 +2,10 @@ export type IntentType = 'qa' | 'clarify' | 'create_trip' | 'modify_trip';
 
 export interface ClassifiedIntent {
   intent: IntentType;
+  readiness?: 'ready' | 'ready_with_defaults' | 'needs_one_answer' | 'blocked';
+  activities?: string[];
+  missingRequirement?:
+    'meal' | 'area' | 'time_conflict' | 'modification_target' | 'direction' | null;
   clarificationQuestion?: string | null;
   clarificationKind?: 'meal' | 'general' | null;
   placeNameQuery?: string;
@@ -91,6 +95,8 @@ export function extractExplicitSeoulArea(message: string): string | undefined {
     ['북촌', '북촌'],
     ['이태원', '이태원'],
     ['한남', '한남'],
+    ['종로', '종로'],
+    ['종로구', '종로'],
   ] as const;
   const ordered = [...aliases].sort((left, right) => right[0].length - left[0].length);
   const hits = ordered
@@ -200,7 +206,9 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
     isModifyKeyword &&
     (hasActiveTrip || /\d+\s*(?:번째|번|番目)|첫\s*번째|두\s*번째/.test(trimmed))
   ) {
-    const isRemove = /빼줘|삭제|제외|抜いて|削除/.test(trimmed);
+    const isRemove =
+      /빼줘|삭제|제외|抜いて|削除/.test(trimmed) &&
+      !/바꿔|교체|변경|変え|変更|チェンジ/.test(trimmed);
     const action: 'remove' | 'replace' = isRemove ? 'remove' : 'replace';
 
     // Extract order (e.g. 1번째, 2번째, 첫번째, 두번째, 1番目, 2番目, 1つ目, 2つ目)
@@ -242,7 +250,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
         action,
         targetStopOrder,
         targetPlaceName,
-        replacementQuery,
+        replacementQuery: action === 'replace' ? trimmed : replacementQuery,
       },
     };
   }

@@ -6,7 +6,7 @@ import { KTO_PLACE_SOURCE } from './kto-place.provider';
 import { knownSeoulSearchArea } from './seoul-area-centers';
 import { SeoulSpatialAreaService } from './seoul-spatial-area.service';
 import { verifiedPlacePrice } from './place-price-evidence';
-import { isStudyCafe } from './place-normalizer';
+import { isStudyCafe, resolveVerifiedPlaceCategory } from './place-normalizer';
 
 const INTEREST_CATEGORIES: Readonly<Record<string, string>> = {
   cafe: 'cafe',
@@ -17,6 +17,8 @@ const INTEREST_CATEGORIES: Readonly<Record<string, string>> = {
   park: 'park',
   stroll: 'park',
   culture: 'culture',
+  attraction: 'attraction',
+  restaurant: 'restaurant',
 };
 
 export interface PlaceCandidateSearchRequest {
@@ -112,6 +114,7 @@ export class PlaceCandidateSearchService {
     return places
       .filter((place) => !(place.category === 'cafe' && isStudyCafe(place.name, place.rawCategory)))
       .map((place) => {
+        place.category = resolveVerifiedPlaceCategory(place);
         const price = verifiedPlacePrice(place.estimatedCostKrw, place.priceEvidence);
         place.estimatedCostKrw = price?.estimatedCostKrw ?? null;
         place.priceEvidence = price?.priceEvidence ?? null;

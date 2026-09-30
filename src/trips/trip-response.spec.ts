@@ -12,6 +12,35 @@ function dtoAirportRoles(dto: ReturnType<typeof toTripDto>): string[] {
 }
 
 describe('trip API response', () => {
+  it('exposes preserved airport and storage contract as partial even for a legacy ready row', () => {
+    const trip = {
+      id: 'partial',
+      status: 'ready',
+      travelDate: '2026-10-03',
+      startTime: '10:00',
+      endTime: '17:00',
+      preference: {
+        validatedJson: {
+          explicitRequestContract: {
+            airport: {
+              name: 'ICN',
+              role: 'departure',
+              terminal: null,
+              deadline: '17:00',
+              sourceRequest: '17시 공항 도착',
+            },
+            luggage: { requested: true, storageRequired: true, sourceRequest: '짐 보관' },
+          },
+        },
+      },
+      stops: [],
+    } as unknown as Trip;
+    expect(toTripDto(trip)).toMatchObject({
+      status: 'partial',
+      explicitRequestContract: { airport: { deadline: '17:00' } },
+      contractAssessment: { status: 'partial' },
+    });
+  });
   it('returns map-safe coordinates, HH:mm values, crowd level, and applied weights', () => {
     const place = {
       id: 'place-id',

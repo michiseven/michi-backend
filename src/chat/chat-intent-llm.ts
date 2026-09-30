@@ -7,6 +7,10 @@ const IntentOutputSchema = z.object({
   intent: z.enum(['qa', 'clarify', 'create_trip', 'modify_trip']),
   readiness: z.enum(['ready', 'ready_with_defaults', 'needs_one_answer', 'blocked']),
   area: z.string().nullable(),
+  activities: z.array(z.string()),
+  missingRequirement: z
+    .enum(['meal', 'area', 'time_conflict', 'modification_target', 'direction'])
+    .nullable(),
   clarificationQuestion: z.string().nullable(),
   clarificationKind: z.enum(['meal', 'general']).nullable(),
 });
@@ -15,10 +19,14 @@ const INSTRUCTIONS = `You classify the latest message for Michi, a Seoul itinera
 Return only the requested structured object.
 
 Treat natural language such as "걷고 싶어요", "즐기고 싶어요", "방문하고 싶어요" as a trip request when it expresses a Seoul area or activity.
-The default user is a first-time Japanese solo visitor who knows nothing about Seoul. Do not ask a question merely because area, time, party size, or budget is missing: create a draft using product defaults instead.
-Ask exactly one short clarification only when a missing fact changes safety or makes the itinerary impossible (for example: an ambiguous place replacement, contradictory flight/appointment times, accessibility requirements with no usable location/time).
+The default user is a first-time Japanese visitor who knows nothing about Seoul. Missing time, party size or budget alone can use product defaults. A missing area can use a suggested area only when the user has supplied a concrete activity or explicitly delegated the choice.
+Ask exactly one short clarification when the user has supplied neither a concrete area nor an activity, or a missing fact changes safety or makes the itinerary impossible (for example: an ambiguous place replacement, contradictory flight/appointment times, accessibility requirements with no usable location/time).
 If the user asks for a meal or the requested itinerary needs a meal but cuisine is unspecified, ask one meal clarification before creating the itinerary. Set clarificationKind=meal and offer Korean, Japanese, Chinese, Western, cafe/dessert, or a local specialty recommendation.
-Use clarify only for that case. For a blank or very vague request, create_trip with readiness ready_with_defaults.
+For a very vague request with neither a concrete area nor an activity, ask one direction question and set missingRequirement=direction.
+"友達と週末にソウルで遊びたい" has neither: Seoul is the service city, not a concrete neighbourhood, and "遊びたい" is not a concrete activity. Return clarify, needs_one_answer, direction, area=null, activities=[]. Do not invent a neighbourhood or activity to make it ready. An explicit "choose everything for me" is different and permits defaults.
+Extract activities and the Seoul area from the whole conversation; resolve a short answer against the earlier request. Return the area in Korean when possible. Never drop dietary restrictions or explicit activities after a meal answer.
+Missing time, party size and budget are defaults, not missing requirements. A concrete area and activity (e.g. 종로에서 전통찻집과 역사 산책) is ready_with_defaults. Do not ask its atmosphere again.
+For clarify, name the missingRequirement and write exactly one contextual question in the user's language. Do not ask about information already supplied. Use null for missingRequirement when ready.
 Use qa only for a factual question about a place, and modify_trip only for an existing itinerary edit request.`;
 
 export async function classifyIntentWithLlm(
@@ -44,24 +52,17 @@ export async function classifyIntentWithLlm(
     const parsed = response.output_parsed;
     if (!parsed) return null;
 
-    if (parsed.intent === 'create_trip') {
-      return {
-        intent: 'create_trip',
-        createTripInput: {
-          text: message.trim(),
-          // The preference parser applies the full first-visitor defaults.
-          startArea: parsed.area ?? undefined,
-        },
-      };
-    }
-    if (parsed.intent === 'clarify' && parsed.readiness === 'needs_one_answer') {
-      return {
-        intent: 'clarify',
-        clarificationQuestion: parsed.clarificationQuestion,
-        clarificationKind: parsed.clarificationKind,
-      };
-    }
-    return { intent: parsed.intent };
+    return {
+      intent: parsed.intent,
+      readiness: parsed.readiness,
+      activities: parsed.activities,
+      missingRequirement: parsed.missingRequirement,
+      clarificationQuestion: parsed.clarificationQuestion,
+      clarificationKind: parsed.clarificationKind,
+      ...(['create_trip', 'clarify'].includes(parsed.intent)
+        ? { createTripInput: { text: message.trim(), startArea: parsed.area ?? undefined } }
+        : {}),
+    };
   } catch {
     // A provider outage must not make chat unavailable; the deterministic
     // classifier is retained only as a safe fallback.

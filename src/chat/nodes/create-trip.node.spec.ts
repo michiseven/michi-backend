@@ -3,6 +3,30 @@ import { createCreateTripNode } from './create-trip.node';
 import type { ChatState } from '../chat-state';
 
 describe('createCreateTripNode', () => {
+  it('never claims completion or budget fulfillment for an unverified airport draft', async () => {
+    const node = createCreateTripNode({
+      generate: jest.fn().mockResolvedValue({
+        trip: {
+          id: 'partial',
+          status: 'partial',
+          contractAssessment: { status: 'partial', unavailable: [] },
+          estimatedTotalCost: 5000,
+          budgetInput: { amountKrw: 30000, scope: 'total' },
+          stops: [],
+        },
+      }),
+    } as never);
+    const update = await node({
+      locale: 'ko',
+      messages: [],
+      createTripInput: { text: '공항 17시까지 짐 보관' },
+      relaxations: [],
+    } as unknown as ChatState);
+    expect(update.responseMessage).toContain('초안');
+    expect(update.responseMessage).not.toContain('완성되었습니다');
+    expect(update.responseMessage).not.toContain('예산 범위 내');
+    expect(update.responseMessage).toContain('전체 30,000원');
+  });
   it('returns a structured summary intent and never targets an arbitrary last meal', async () => {
     const node = createCreateTripNode({
       generate: jest.fn().mockResolvedValue({

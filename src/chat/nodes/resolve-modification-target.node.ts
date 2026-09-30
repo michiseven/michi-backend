@@ -51,7 +51,7 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
       const cleanTarget = mod.targetPlaceName.toLowerCase().replace(/\s+/g, '');
       const matchingStops = currentStops.filter((s) => {
         const name = (s.place?.name || '').toLowerCase().replace(/\s+/g, '');
-        return name.includes(cleanTarget) || cleanTarget.includes(name);
+        return Boolean(name && cleanTarget) && name === cleanTarget;
       });
 
       if (matchingStops.length === 1) {
@@ -60,7 +60,7 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
     }
 
     // 4. Fallback search by category keyword in query (e.g. "카페", "저녁", "점심", "식당")
-    if (!targetStop) {
+    if (!targetStop && !mod?.targetStopId && !mod?.targetStopOrder && !mod?.targetPlaceName) {
       const lastMsg = state.messages[state.messages.length - 1];
       const text = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
 
@@ -89,6 +89,7 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
       }));
 
       return {
+        pendingModification: mod,
         responseMessage: isKo
           ? '어떤 장소를 변경할지 특정하지 못했습니다. 아래 일정 목록 중 변경하고 싶은 장소를 선택해 주세요.'
           : '変更対象のスポットを特定できませんでした。以下のリストから変更したいスポットをお選びください。',
@@ -102,6 +103,7 @@ export function createResolveModificationTargetNode(tripsRepo: Repository<Trip>)
     const stopName = targetStop.place?.name || '장소';
 
     return {
+      pendingModification: null,
       modification: {
         action,
         targetStopId: targetStop.id,

@@ -3,6 +3,10 @@ import type { Place, Trip } from '../../database/entities';
 import type { ChatState, ChatUpdate, VerifiedPlaceFacts } from '../chat-state';
 import { verifiedPlacePrice } from '../../providers/place/place-price-evidence';
 import { localizePlaceName } from '../../trips/place-name-localizer';
+import {
+  extractExplicitRequestContract,
+  type ExplicitRequestContract,
+} from '../../preferences/explicit-request-contract';
 
 function normalizedName(value: string): string {
   return value
@@ -53,8 +57,47 @@ export function createLoadVerifiedFactsNode(
     if (state.currentTripId) {
       const trip = await tripsRepo.findOne({
         where: { id: state.currentTripId },
-        relations: ['stops', 'stops.place'],
+        relations: ['stops', 'stops.place', 'preference'],
       });
+      if (trip && /공항|터미널|짐|캐리어|비행기|空港|ターミナル|荷物|フライト/u.test(text)) {
+        const contract =
+          (trip.preference?.validatedJson?.explicitRequestContract as
+            ExplicitRequestContract | undefined) ??
+          extractExplicitRequestContract(trip.preference?.originalText ?? '');
+        const isKo = state.locale === 'ko';
+        const deadline = contract.airport?.arrivalDeadline ?? contract.airport?.deadline;
+        const details: string[] = [
+          isKo
+            ? '현재 일정의 공항·짐 조건은 검증이 완료되지 않았습니다. 관광 일정의 종료 시간이 공항 도착이나 짐 회수 보장을 의미하지 않습니다.'
+            : '現在のプランでは空港・荷物の条件の確認が完了していません。観光の終了時刻は空港到着や荷物の受取を保証しません。',
+        ];
+        if (deadline)
+          details.push(
+            isKo
+              ? `입력한 공항 도착 목표 ${deadline}은 보존되어 있지만 공항 이동 경로와 소요시간을 검증하지 못했습니다.`
+              : `入力された空港到着目標${deadline}は保持していますが、空港への経路と所要時間は未確認です。`,
+          );
+        if (contract.luggage)
+          details.push(
+            isKo
+              ? '짐 보관시설의 운영시간·비용과 회수 동선은 미확인입니다. 검증된 보관시설 없이 회수가 가능하다고 안내하지 않습니다.'
+              : '荷物預かり施設の営業時間・料金と受取ルートは未確認です。確認済み施設がないため受取可能とは案内できません。',
+          );
+        details.push(
+          contract.airport?.name === 'ICN' && !contract.airport.terminal
+            ? isKo
+              ? '인천공항 출국 터미널이 T1인가요, T2인가요?'
+              : '仁川空港の出発ターミナルはT1ですか、T2ですか？'
+            : isKo
+              ? '공항 이동과 보관시설은 공식 채널에서 확인해야 하며 이 일정은 아직 미완성입니다.'
+              : '空港移動と荷物預かりは公式情報で確認が必要です。このプランはまだ未完成です。',
+        );
+        return {
+          verifiedPlaceFacts: null,
+          responseMessage: details.join('\n\n'),
+          status: 'completed',
+        };
+      }
       if (trip && trip.stops) {
         const normalizedText = normalizedName(text);
         const matches = trip.stops

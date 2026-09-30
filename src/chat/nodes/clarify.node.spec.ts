@@ -2,6 +2,17 @@ import { createClarifyNode } from './clarify.node';
 import type { ChatState } from '../chat-state';
 
 describe('createClarifyNode', () => {
+  it('offers answerable direction choices for an intentionally vague request', async () => {
+    const update = await createClarifyNode()({
+      locale: 'ja',
+      clarificationKind: 'direction',
+      clarificationQuestion: 'どんな体験をしてみたいですか？',
+      pendingQuestion: null,
+    } as ChatState);
+    const chips = update.actionChips as Array<{ label: string; query: string }>;
+    expect(chips.some((chip) => chip.query.includes('韓屋'))).toBe(true);
+  });
+
   it.each([
     [
       'ko',

@@ -5,6 +5,53 @@ import { TripPreferenceSchemaValidator } from './trip-preference-schema.validato
 import type { TripPreferenceParser } from './preference-parser';
 
 describe('PreferencesService', () => {
+  it('does not flatten distinct multi-day boundary times into a single activity range', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({
+      text: '성수 카페 13시부터16시까지',
+      startDate: '2026-12-01',
+      endDate: '2026-12-02',
+      startTime: '11:00',
+      endTime: '20:30',
+    });
+    expect(result.preference.totalDays).toBe(2);
+    expect(result.preference.days?.[0]?.startTime).toBe('11:00');
+    expect(result.preference.days?.[1]?.endTime).toBe('20:30');
+  });
+  it('never expands explicit 13–16 tourism to flight20:30 or checkout11', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({
+      text: '토요일 성수에서13시부터16시까지 카페. 호텔11시 체크아웃. 캐리어1개 보관 후 회수, 인천공항20:30비행기여서18시까지 공항에 도착해야 해. 터미널은 몰라. 한국어로 답해줘',
+      startTime: '11:00',
+      endTime: '20:30',
+    });
+    expect(result.preference).toMatchObject({ startTime: '13:00', endTime: '16:00' });
+    expect(result.preference.days?.[0]).toMatchObject({ startTime: '13:00', endTime: '16:00' });
+  });
+  it('preserves Saturday and scoped budget when model omits natural conditions', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-30T18:00:00Z'));
+    try {
+      const schema = new TripPreferenceSchemaValidator();
+      const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+      const result = await service.parse({
+        text: '토요일 성수에서 3명 가족 여행, 1인당 2만원',
+        startDate: '2026-10-01',
+        partySize: 1,
+        budget: 20_000,
+        budgetScope: 'total',
+      });
+      expect(result.preference).toMatchObject({
+        startDate: '2026-10-03',
+        partySize: 3,
+        totalBudgetKrw: 60_000,
+      });
+      expect(result.preference.days?.[0]?.date).toBe('2026-10-03');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   const schema = new TripPreferenceSchemaValidator();
   const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
 
@@ -126,6 +173,14 @@ describe('PreferencesService', () => {
     expect(day?.interests).toEqual(expect.arrayContaining(['cafe', 'stroll', 'restaurant']));
     expect(day?.interests).not.toContain('local');
     expect(day?.mealWindows?.[0]?.cuisinePreferences).toEqual([]);
+  });
+
+  it('preserves vegan restrictions when delegating the meal choice', async () => {
+    const result = await service.parse({
+      text: '홍대에서 비건 점심을 먹고 싶어',
+      mealPreference: 'local_specialty',
+    });
+    expect(result.preference.days?.[0]?.mealWindows?.[0]?.cuisinePreferences).toContain('비건');
   });
 
   it('repairs an inferred default window that would otherwise exclude an explicit dinner', async () => {
