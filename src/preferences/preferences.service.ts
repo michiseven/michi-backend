@@ -137,9 +137,63 @@ function minutesAt(time: string): number {
 }
 
 function hasExplicitTimeRange(text: string): boolean {
-  return /(?:\d{1,2}\s*(?:시|時)|\d{1,2}:\d{2})\s*(?:~|〜|[-–])\s*(?:\d{1,2}\s*(?:시|時)|\d{1,2}:\d{2})/u.test(
-    text,
+  return Boolean(extractExplicitRequestContract(text).activityWindow);
+}
+
+function userMealTiming(
+  text: string,
+  mealType: MealWindowPreference['mealType'],
+): { targetTime?: string; durationMinutes?: number } {
+  const range = extractExplicitRequestContract(text).activityWindow?.sourceRequest;
+  if (range) text = text.replace(range, '');
+  const aliases =
+    mealType === 'dinner'
+      ? '저녁|석식|夕食|ディナー|dinner'
+      : mealType === 'lunch'
+        ? '점심|昼食|ランチ|lunch'
+        : '아침|朝食|breakfast';
+  const clock = '(\\d{1,2})(?::(\\d{2})|\\s*(?:시|時)(?:\\s*(\\d{1,2})\\s*(?:분|分))?)';
+  const match =
+    text.match(
+      new RegExp(`${clock}\\s*(?:에|から)?\\s*(?:\\d+\\s*(?:분|分)\\s*)?(?:${aliases})`, 'iu'),
+    ) ?? text.match(new RegExp(`(?:${aliases})\\s*(?:은|는|을|를|は|を)?\\s*${clock}`, 'iu'));
+  const targetTime =
+    match && Number(match[1]) < 24 && Number(match[2] ?? match[3] ?? 0) < 60
+      ? `${match[1]!.padStart(2, '0')}:${String(match[2] ?? match[3] ?? '00').padStart(2, '0')}`
+      : undefined;
+  const durationMatch = text.match(
+    new RegExp(
+      `(\\d+)\\s*(?:분|分)\\s*(?:${aliases})|(?:${aliases})\\s*(?:은|는|을|를|は|を)?\\s*(\\d+)\\s*(?:분|分)`,
+      'iu',
+    ),
   );
+  return {
+    targetTime,
+    durationMinutes: durationMatch ? Number(durationMatch[1] ?? durationMatch[2]) : undefined,
+  };
+}
+
+/** A generated meal target is flexible; a user-stated meal time is not. */
+function mealWindowsWithinActivityWindow(
+  meals: MealWindowPreference[],
+  startTime: string,
+  endTime: string,
+  text: string,
+): MealWindowPreference[] {
+  const start = minutesAt(startTime);
+  const end = minutesAt(endTime);
+  return meals.map((meal) => {
+    if (userMealTiming(text, meal.mealType).targetTime || end - start < meal.durationMinutes)
+      return meal;
+    const target = Math.min(
+      Math.max(minutesAt(meal.targetTime), start),
+      end - meal.durationMinutes,
+    );
+    return {
+      ...meal,
+      targetTime: `${String(Math.floor(target / 60)).padStart(2, '0')}:${String(target % 60).padStart(2, '0')}`,
+    };
+  });
 }
 
 /**
@@ -351,7 +405,15 @@ export class PreferencesService {
       const mergedMealWindows = mergeMealWindows(
         sourceMealWindows,
         dayNum === 1 ? directMealWindows : [],
-      ).map((meal) => {
+      ).map((sourceMeal) => {
+        const timing = userMealTiming(input.text, sourceMeal.mealType);
+        const meal = {
+          ...sourceMeal,
+          ...(timing.targetTime
+            ? { targetTime: timing.targetTime, durationMinutes: timing.durationMinutes ?? 60 }
+            : {}),
+          ...(timing.durationMinutes ? { durationMinutes: timing.durationMinutes } : {}),
+        };
         // Delegating the cuisine does not waive an explicit dietary restriction.
         const dietary = /비건|vegan|ビーガン|ヴィーガン/iu.test(input.text) ? ['비건'] : [];
         if (input.mealPreference === 'local_specialty') {
@@ -398,7 +460,15 @@ export class PreferencesService {
             : anchor;
         })(),
         fixedAppointments: fixedAppointmentsWithDefaults(sourceFixedAppointments, input.text),
-        mealWindows: mergedMealWindows,
+        mealWindows:
+          activityWindow || input.startTime || input.endTime
+            ? mealWindowsWithinActivityWindow(
+                mergedMealWindows,
+                dayStartTime,
+                reconciledEndTime,
+                input.text,
+              )
+            : mergedMealWindows,
         mustVisitPlaces:
           existing?.mustVisitPlaces ??
           (dayNum === 1 ? (firstSourceDay?.mustVisitPlaces ?? []) : []),

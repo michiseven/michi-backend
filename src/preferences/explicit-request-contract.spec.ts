@@ -4,6 +4,10 @@ import {
 } from './explicit-request-contract';
 
 describe('explicit request contract', () => {
+  it.each(['2026-10-03 토요일 카페', '3~5명과 카페', '13~25시 카페'])(
+    'does not mistake a date, party range, or invalid hour for an activity window: %s',
+    (text) => expect(extractExplicitRequestContract(text).activityWindow).toBeUndefined(),
+  );
   it.each(['카페 두 곳', '카페2곳', 'カフェ2軒', 'カフェ二軒', 'cafe 2 places'])(
     'retains explicit cafe count: %s',
     (text) => {
@@ -46,7 +50,7 @@ describe('explicit request contract', () => {
       activityWindow: { startTime: '13:00', endTime: '16:00' },
     });
   });
-  it.each(['13시부터16시까지', '13:00〜16:00', '13時から16時まで'])(
+  it.each(['13시부터16시까지', '13:00〜16:00', '13時から16時まで', '13~16시', '13〜16時'])(
     'extracts a separate activity range: %s',
     (range) => {
       expect(

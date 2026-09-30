@@ -131,19 +131,30 @@ export function extractExplicitRequestContract(
 ): ExplicitRequestContract {
   const result: ExplicitRequestContract = {};
   Object.assign(result, extractScopedActivityCounts(text, explicitActivityCounts));
+  const compactRange = text.match(
+    /(?<!\d)(\d{1,2})\s*(?:~|〜|～|[-–])\s*(\d{1,2})\s*(?:시|時)(?!\d)/u,
+  );
   const activityRange = text.match(
     new RegExp(
       `${TIME_PATTERN}\\s*(?:부터|から|~|〜|～|[-–])\\s*${TIME_PATTERN}\\s*(?:까지|まで)?`,
       'u',
     ),
   );
-  const activityStart = timeFromMatch(activityRange);
-  const activityEnd = timeFromMatch(activityRange, 4);
+  const activityStart =
+    timeFromMatch(activityRange) ??
+    (compactRange && Number(compactRange[1]) < 24
+      ? `${compactRange[1]!.padStart(2, '0')}:00`
+      : null);
+  const activityEnd =
+    timeFromMatch(activityRange, 4) ??
+    (compactRange && Number(compactRange[2]) < 24
+      ? `${compactRange[2]!.padStart(2, '0')}:00`
+      : null);
   if (activityStart && activityEnd)
     result.activityWindow = {
       startTime: activityStart,
       endTime: activityEnd,
-      sourceRequest: activityRange![0],
+      sourceRequest: activityRange?.[0] ?? compactRange![0],
     };
   const today = seoulToday(now);
   const iso = text.match(/\b(\d{4}-\d{2}-\d{2})\b/u)?.[1];

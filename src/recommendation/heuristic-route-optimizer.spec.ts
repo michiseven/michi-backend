@@ -76,6 +76,46 @@ function seoulTime(iso: string): string {
 
 describe('HeuristicRouteOptimizer', () => {
   const optimizer = new HeuristicRouteOptimizer();
+  it.each([
+    ['17:00', 60, 2],
+    ['17:00', 90, 0],
+    ['18:30', 60, 0],
+    ['16:30', 90, 2],
+  ])(
+    'respects meal target %s and duration %s within a hard 18:00 end',
+    (targetTime, durationMinutes, count) => {
+      const route = optimizer.optimize(
+        input(
+          [
+            candidate('hongdae-cafe', 'cafe', 126.924, 37.557),
+            candidate('hongdae-western', 'restaurant', 126.925, 37.557),
+          ],
+          {
+            endTime: '18:00',
+            requiredActivityCounts: { cafe: 1, restaurant: 1 },
+            mealWindows: [
+              {
+                mealType: 'dinner',
+                targetTime,
+                durationMinutes,
+                cuisinePreferences: ['양식'],
+                area: '홍대',
+              },
+            ],
+          },
+        ),
+      );
+      expect(route).toHaveLength(count);
+      if (count) {
+        const meal = route.find((stop) => stop.stopType === 'meal')!;
+        expect(meal.estimatedStayMinutes).toBe(durationMinutes);
+        expect((Date.parse(meal.leaveAt) - Date.parse(meal.arrivalAt)) / 60000).toBe(
+          durationMinutes,
+        );
+        expect(seoulTime(meal.leaveAt) <= '18:00').toBe(true);
+      }
+    },
+  );
 
   it('plans toward a trip-wide quota without forcing it all into the first day', () => {
     const firstCafe = candidate('first-day-cafe', 'cafe', 126.924, 37.557);

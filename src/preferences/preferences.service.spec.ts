@@ -5,6 +5,61 @@ import { TripPreferenceSchemaValidator } from './trip-preference-schema.validato
 import type { TripPreferenceParser } from './preference-parser';
 
 describe('PreferencesService', () => {
+  it.each(['13~18시', '13〜18時', '13시부터18시까지'])(
+    'fits an inferred western dinner inside the hard Hongdae window %s',
+    async (range) => {
+      const schema = new TripPreferenceSchemaValidator();
+      const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+      const result = await service.parse({
+        text: `홍대에서 친구 3명과 토요일 ${range}에 카페와 저녁을 즐기고 싶어요.`,
+        mealCuisine: 'western',
+      });
+      expect(result.preference).toMatchObject({
+        area: '홍대',
+        startTime: '13:00',
+        endTime: '18:00',
+      });
+      const day = result.preference.days![0]!;
+      expect(day).toMatchObject({ area: '홍대', startTime: '13:00', endTime: '18:00' });
+      expect(day.mealWindows).toEqual([
+        expect.objectContaining({
+          mealType: 'dinner',
+          targetTime: '16:30',
+          durationMinutes: 90,
+          cuisinePreferences: ['양식'],
+        }),
+      ]);
+    },
+  );
+  it('preserves an explicitly conflicting dinner clock for feasibility rejection', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({
+      text: '홍대에서13~18시 카페, 저녁18:30에 양식',
+      mealCuisine: 'western',
+    });
+    expect(result.preference.endTime).toBe('18:00');
+    expect(result.preference.days![0]!.mealWindows![0]!.targetTime).toBe('18:30');
+  });
+  it('does not mistake the final bound of a compact range for an explicit dinner time', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({ text: '홍대13~18시 저녁양식', mealCuisine: 'western' });
+    expect(result.preference.days![0]!.mealWindows![0]!.targetTime).toBe('16:30');
+  });
+  it.each([
+    ['홍대13~18시 카페, 17시에 저녁 양식', '17:00', 60],
+    ['홍대13~18시 카페, 17시에90분저녁 양식', '17:00', 90],
+    ['홍대13~18시 카페, 18:30에저녁 양식', '18:30', 60],
+  ])('preserves explicit meal timing in %s', async (text, targetTime, durationMinutes) => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({ text, mealCuisine: 'western' });
+    expect(result.preference.days![0]!).toMatchObject({
+      endTime: '18:00',
+      mealWindows: [expect.objectContaining({ targetTime, durationMinutes })],
+    });
+  });
   it('does not flatten distinct multi-day boundary times into a single activity range', async () => {
     const schema = new TripPreferenceSchemaValidator();
     const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
@@ -139,7 +194,7 @@ describe('PreferencesService', () => {
     expect(day?.mealWindows).toEqual([
       expect.objectContaining({
         mealType: 'lunch',
-        targetTime: '12:30',
+        targetTime: '13:00',
         cuisinePreferences: ['한식'],
       }),
     ]);

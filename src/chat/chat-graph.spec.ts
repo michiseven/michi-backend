@@ -5,6 +5,12 @@ import { HumanMessage } from '@langchain/core/messages';
 import { createChatGraph } from './chat-graph';
 import type { Place, Trip } from '../database/entities';
 import { placeQueryPhrases } from './nodes/load-verified-facts.node';
+import { PreferencesService } from '../preferences/preferences.service';
+import { MockTripPreferenceParser } from '../preferences/mock-trip-preference.parser';
+import { TripPreferenceSchemaValidator } from '../preferences/trip-preference-schema.validator';
+import { HeuristicRouteOptimizer } from '../recommendation/heuristic-route-optimizer';
+import type { RankedCandidate, RouteStopPlan } from '../recommendation/ports';
+import type { PreferenceParseInput } from '../preferences/preference.types';
 
 describe('LangGraph Chat Workflow (createChatGraph)', () => {
   let mockPlacesRepo: any;
@@ -578,6 +584,92 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
     expect(mockTripsService.generate).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: original, mealCuisine: 'korean', startArea: '홍대' }),
     );
+  });
+
+  it('completes the two-turn Hongdae western dinner flow within the original 13–18 window', async () => {
+    const original = '홍대에서 친구 3명과 토요일 13~18시에 카페와 저녁을 즐기고 싶어요.';
+    const schema = new TripPreferenceSchemaValidator();
+    const preferences = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const optimizer = new HeuristicRouteOptimizer();
+    let planned: RouteStopPlan[] = [];
+    mockTripsService.generate.mockImplementation(async (dto: PreferenceParseInput) => {
+      const parsed = await preferences.parse(dto);
+      const day = parsed.preference.days![0]!;
+      const candidates = ['cafe', 'restaurant'].map((category, index): RankedCandidate => ({
+        place: {
+          placeId: category,
+          source: 'fixture',
+          sourcePlaceId: category,
+          name: category,
+          category,
+          address: '서울 마포구 홍대',
+          roadAddress: null,
+          district: '마포구',
+          location: { type: 'Point', coordinates: [126.924 + index * 0.001, 37.557] },
+          rawCategory: category === 'restaurant' ? '양식 피자' : '카페',
+          rawPayload: {},
+        },
+        estimatedCost: null,
+        estimatedStayMinutes: 60,
+        reason: 'verified fixture',
+        scoreBreakdown: {
+          total: 1,
+          preference: 1,
+          crowd: 1,
+          distance: 1,
+          time: 1,
+          budget: 1,
+          diversity: 1,
+          area: 1,
+        },
+      }));
+      planned = optimizer.optimize({
+        travelDate: day.date!,
+        startTime: day.startTime,
+        endTime: day.endTime,
+        budget: null,
+        mealWindows: day.mealWindows,
+        candidates,
+        requiredActivityCounts: { cafe: 1, restaurant: 1 },
+      });
+      expect(parsed.preference).toMatchObject({
+        area: '홍대',
+        startTime: '13:00',
+        endTime: '18:00',
+      });
+      expect(day.mealWindows![0]!.cuisinePreferences).toEqual(['양식']);
+      return { trip: { id: 'trip-western-window', stops: planned }, editToken: 'fixture-token' };
+    });
+    const config = { configurable: { thread_id: 'thread-western-window' } };
+    const first: any = await graph.invoke(
+      { messages: [new HumanMessage(original)], locale: 'ko' },
+      config,
+    );
+    expect(first.pendingQuestion.reason).toBe('meal_choice_required');
+    expect(mockTripsService.generate).not.toHaveBeenCalled();
+    const second: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('양식')],
+        mealCuisine: 'western',
+        locale: 'ko',
+        responseMessage: null,
+      },
+      config,
+    );
+    expect(second.errorCode).toBeNull();
+    expect(second.resultTripId).toBe('trip-western-window');
+    expect(mockTripsService.generate).toHaveBeenCalledTimes(1);
+    expect(mockTripsService.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ text: original, mealCuisine: 'western', startArea: '홍대' }),
+    );
+    expect(planned.map((stop) => stop.stopType)).toEqual(['general', 'meal']);
+    expect(
+      planned.every(
+        (stop) =>
+          stop.arrivalAt >= `${planned[0]!.arrivalAt.slice(0, 10)}T04:00:00.000Z` &&
+          stop.leaveAt <= `${planned[0]!.arrivalAt.slice(0, 10)}T09:00:00.000Z`,
+      ),
+    ).toBe(true);
   });
 
   it('keeps the original area, time, and activities across a meal clarification turn', async () => {

@@ -242,6 +242,15 @@ function scheduleCandidate(
     cursor.getTime() + travelMinutes(routing, input, previous, candidate) * 60_000,
   );
   const mealArrival = alignWithMealWindow(input, candidate, travelArrival);
+  if (candidate.place.category === 'restaurant') {
+    const meal = input.mealWindows?.find((window) => {
+      const target = dateAtTime(input.travelDate, window.targetTime);
+      return mealArrival >= target && mealArrival.getTime() <= target.getTime() + 60 * 60_000;
+    });
+    if (meal) {
+      candidate = { ...candidate, estimatedStayMinutes: meal.durationMinutes };
+    }
+  }
   const arrival = alignWithKnownHours(input, candidate, mealArrival);
   if (!arrival) return null;
   const leave = new Date(arrival.getTime() + candidate.estimatedStayMinutes * 60_000);
