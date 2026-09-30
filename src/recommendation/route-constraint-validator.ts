@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { resolveVerifiedPlaceCategory } from '../providers/place/place-normalizer';
 import type {
   CandidatePlace,
   OpeningInterval,
@@ -122,6 +123,21 @@ export class RouteConstraintValidator implements RouteConstraintValidatorPort {
         code: 'BUDGET_EXCEEDED',
         message: 'The sum of known stop costs exceeds the requested budget.',
       });
+    }
+    // Validate published and edited routes independently of the optimizer.
+    // Repeating the same place or relabelling a shop as a cafe cannot satisfy a quota.
+    for (const [category, minimum] of Object.entries(input.requiredActivityCounts ?? {})) {
+      if (minimum === undefined) continue;
+      const actual = [...seen].filter((id) => {
+        const candidate = candidateById.get(id);
+        return candidate && resolveVerifiedPlaceCategory(candidate.place) === category;
+      }).length;
+      if (!Number.isSafeInteger(minimum) || minimum < 0 || actual < minimum) {
+        violations.push({
+          code: 'REQUIRED_ACTIVITY_COUNT_UNMET',
+          message: `Requested ${minimum} ${category} visits, but the route contains ${actual} distinct verified ${category} places.`,
+        });
+      }
     }
     if (unknownCost) {
       warningValues.push('가격이 확인되지 않은 장소가 있어 전체 예산 충족 여부는 부분 검증입니다.');

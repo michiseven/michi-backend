@@ -485,6 +485,7 @@ describe('trip API response', () => {
       result: 'unknown',
     });
     expect(dto.safetyConstraints?.requiresUserConfirmation).toBe(true);
+    expect(dto.status).toBe('partial');
     expect(dto.stops[0]?.accessibilitySafety).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

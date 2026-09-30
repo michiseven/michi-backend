@@ -1181,6 +1181,11 @@ export class TripsService {
           endTime: day.endTime,
           budget: day.dailyBudgetKrw ?? null,
           candidates: dayCandidates,
+          // Explicit counts are hard requirements, not preference weights.
+          // A request-wide count applies once; do not duplicate it on every day.
+          ...(day.dayNumber === 1
+            ? { requiredActivityCounts: explicitRequestContract.requiredActivityCounts }
+            : {}),
           maxWalkMinutes:
             !relaxations.has('route_constraints') &&
             (preferredTransit === null || preferredTransit === 'walk')
@@ -1969,6 +1974,7 @@ export class TripsService {
         routeWarnings.some((warning) => /자유 시간|自由時間/u.test(warning));
       trip.status =
         assessExplicitRequestContract(explicitRequestContract).status === 'partial' ||
+        resolveSafetyRequests(dto.text, dto.safetyConstraints).length > 0 ||
         unfilledSchedule
           ? 'partial'
           : 'ready';
@@ -2132,6 +2138,10 @@ export class TripsService {
       budget: trip.budgetKrw,
       candidates,
       preserveOrder: true,
+      requiredActivityCounts: (
+        trip.preference?.validatedJson?.explicitRequestContract as
+          import('../preferences/explicit-request-contract').ExplicitRequestContract | undefined
+      )?.requiredActivityCounts,
     };
     let route = this.routeOptimizer.optimize(editRouteInput);
     const proposedPlaceIds = proposedStops.map((stop) => stop.placeId);

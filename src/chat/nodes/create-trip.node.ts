@@ -65,11 +65,24 @@ export function createCreateTripNode(tripsService: TripsService, apiKey?: string
 
       const isPartial =
         generated.trip.contractAssessment?.status === 'partial' ||
-        generated.trip.status === 'partial';
+        generated.trip.status === 'partial' ||
+        generated.trip.safetyConstraints?.requiresUserConfirmation === true;
+      const incompleteConditions =
+        generated.trip.safetyConstraints?.requiresUserConfirmation === true
+          ? isKo
+            ? '요청한 안전·접근성 조건은 장소별 근거가 없어 아직 확인하지 못했습니다. 방문 전 공식 정보로 확인해야 합니다.'
+            : '指定された安全性・アクセシビリティ条件は施設ごとの根拠がなく、未確認です。訪問前に公式情報で確認してください。'
+          : generated.trip.contractAssessment?.status === 'partial'
+            ? isKo
+              ? '공항 이동시간·터미널 또는 짐 보관 조건은 아직 검증되지 않았습니다. 이동시간과 보관 가능 여부 확인이 필요합니다.'
+              : '空港への移動時間・ターミナルまたは荷物預かり条件は未確認です。'
+            : isKo
+              ? '요청 시간대 중 아직 채우지 못한 시간이 있습니다. 타임라인의 자유 시간을 확인해 주세요.'
+              : '指定時間帯に未充足の時間があります。タイムラインの自由時間を確認してください。';
       const responseMessage = isPartial
         ? isKo
-          ? `${area} 시내 일정 초안을 만들었습니다. 공항 이동시간·터미널 또는 짐 보관 조건은 아직 검증되지 않아 전체 일정이 완료된 것은 아닙니다. 요청 조건은 유지했으며, 이동시간과 보관 가능 여부 확인이 필요합니다.${costFeedback}`
-          : `${area}の市内旅程の下書きを作成しました。空港への移動時間・ターミナルまたは荷物預かり条件は未確認のため、旅程全体はまだ完成していません。指定条件は保持しています。${costFeedback}`
+          ? `${area} 시내 일정 초안을 만들었습니다. ${incompleteConditions} 전체 요청이 완료된 것은 아니며, 요청 조건은 유지했습니다.${costFeedback}`
+          : `${area}の市内旅程の下書きを作成しました。${incompleteConditions} 旅程全体はまだ完成していません。指定条件は保持しています。${costFeedback}`
         : isKo
           ? `✨ **${area}** 맞춤 여행 일정이 완성되었습니다! 🎉${costFeedback}\n\n지도와 타임라인에서 상세 장소와 이동 동선을 확인해 보세요. 특정 장소를 변경하고 싶으시면 말씀해 주세요!`
           : `✨ **${area}**のおすすめ旅程が完成しました！🎉${costFeedback}\n\nマップとタイムラインで詳細ルートをご確認いただけます。気になるスポットの変更もお気軽にどうぞ！`;

@@ -4,6 +4,9 @@ export interface ExplicitRequestContract {
   partySize?: number;
   budget?: { amountKrw: number; scope: 'total' | 'per_person' };
   activityWindow?: { startTime: string; endTime: string; sourceRequest: string };
+  requiredActivityCounts?: Partial<
+    Record<'cafe' | 'park' | 'restaurant' | 'culture' | 'attraction', number>
+  >;
   airport?: {
     role: 'arrival' | 'departure' | 'unknown';
     name: 'ICN' | 'GMP' | 'unspecified';
@@ -34,6 +37,69 @@ function timeFromMatch(match: RegExpMatchArray | null, offset = 1): string | nul
 const TIME_PATTERN =
   '(?<!\\d)(\\d{1,2})(?::(\\d{2})|\\s*(?:시|時)(?:\\s*(\\d{1,2})\\s*(?:분|分))?)';
 
+function explicitActivityCounts(text: string): ExplicitRequestContract['requiredActivityCounts'] {
+  const counts: NonNullable<ExplicitRequestContract['requiredActivityCounts']> = {};
+  const categories: Array<[keyof typeof counts, string]> = [
+    ['cafe', '카페|カフェ|cafe'],
+    ['park', '공원|公園|parks?'],
+    ['restaurant', '식당|음식점|맛집|レストラン|飲食店|restaurants?'],
+    ['culture', '박물관|미술관|博物館|美術館|museums?|galleries'],
+    ['attraction', '관광지|명소|観光地|観光スポット|attractions?'],
+  ];
+  const numbers: Record<string, number> = {
+    한: 1,
+    하나: 1,
+    두: 2,
+    둘: 2,
+    세: 3,
+    셋: 3,
+    네: 4,
+    넷: 4,
+    다섯: 5,
+    여섯: 6,
+    일곱: 7,
+    여덟: 8,
+    아홉: 9,
+    열: 10,
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10,
+  };
+  const numberPattern =
+    '\\d+|하나|다섯|여섯|일곱|여덟|아홉|한|두|둘|세|셋|네|넷|열|[一二三四五六七八九十]';
+  for (const [category, aliases] of categories) {
+    const expression = new RegExp(
+      `(?:${aliases})\\s*(?:을|를|は|を)?\\s*(${numberPattern})\\s*(?:곳|군데|개|軒|箇所|か所|ヶ所|つ|件|places?)`,
+      'giu',
+    );
+    for (const match of text.matchAll(expression)) {
+      const before = text.slice(Math.max(0, match.index - 16), match.index);
+      const after = text.slice(match.index + match[0].length);
+      // A study-cafe exclusion is not a requested ordinary cafe count. Names
+      // like "스타벅스카페2호점" and people counters are not activity promises.
+      if (category === 'cafe' && /스터디\s*$|study\s*$|スタディ\s*$/iu.test(before)) continue;
+      if (/(?:안\s*갈|제외할|빼야\s*할|避ける)\s*$/u.test(before)) continue;
+      if (
+        /^\s*(?:은|는|을|를|には|は|を)?\s*(?:제외|빼|안\s*가|가지\s*않|不要|除外|行かない|なし|避け)/u.test(
+          after,
+        )
+      )
+        continue;
+      const count = numbers[match[1]!] ?? Number(match[1]);
+      if (Number.isSafeInteger(count) && count > 0)
+        counts[category] = Math.max(counts[category] ?? 0, count);
+    }
+  }
+  return Object.keys(counts).length ? counts : undefined;
+}
+
 export interface RequestContractAssessment {
   status: 'satisfied' | 'partial';
   unavailable: Array<{
@@ -57,6 +123,8 @@ export function extractExplicitRequestContract(
   now = new Date(),
 ): ExplicitRequestContract {
   const result: ExplicitRequestContract = {};
+  const requiredActivityCounts = explicitActivityCounts(text);
+  if (requiredActivityCounts) result.requiredActivityCounts = requiredActivityCounts;
   const activityRange = text.match(
     new RegExp(
       `${TIME_PATTERN}\\s*(?:부터|から|~|〜|～|[-–])\\s*${TIME_PATTERN}\\s*(?:까지|まで)?`,

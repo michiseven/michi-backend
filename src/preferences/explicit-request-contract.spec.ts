@@ -4,6 +4,40 @@ import {
 } from './explicit-request-contract';
 
 describe('explicit request contract', () => {
+  it.each(['카페 두 곳', '카페2곳', 'カフェ2軒', 'カフェ二軒', 'cafe 2 places'])(
+    'retains explicit cafe count: %s',
+    (text) => {
+      expect(extractExplicitRequestContract(text).requiredActivityCounts).toEqual({ cafe: 2 });
+    },
+  );
+  it('keeps activity counts separate from party size and excluded venues in a real request', () => {
+    expect(
+      extractExplicitRequestContract(
+        '토요일 홍대에서 친구 3명과 13시부터18시까지 카페 두 곳과 산책. 스터디카페 2곳 제외',
+      ),
+    ).toMatchObject({ partySize: 3, requiredActivityCounts: { cafe: 2 } });
+    expect(
+      extractExplicitRequestContract('친구 3명 카페에서 쉬고 산책').requiredActivityCounts,
+    ).toBeUndefined();
+    expect(
+      extractExplicitRequestContract('스터디카페 두 곳 제외, 공원은 산책').requiredActivityCounts,
+    ).toBeUndefined();
+    expect(
+      extractExplicitRequestContract('카페 두 곳은 빼줘').requiredActivityCounts,
+    ).toBeUndefined();
+    expect(
+      extractExplicitRequestContract('カフェ二軒には行かない').requiredActivityCounts,
+    ).toBeUndefined();
+    expect(
+      extractExplicitRequestContract('스타벅스카페2호점에 가자').requiredActivityCounts,
+    ).toBeUndefined();
+  });
+  it('extracts only explicit quantities for other canonical activities', () => {
+    expect(
+      extractExplicitRequestContract('공원 한 곳과 식당 두 곳, 박물관 세 곳과 관광지 4곳')
+        .requiredActivityCounts,
+    ).toEqual({ park: 1, restaurant: 2, culture: 3, attraction: 4 });
+  });
   it('preserves hotel checkout without any airport mention', () => {
     expect(
       extractExplicitRequestContract('호텔 11시 체크아웃 뒤 성수 13시부터16시까지 카페'),

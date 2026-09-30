@@ -77,6 +77,64 @@ function seoulTime(iso: string): string {
 describe('HeuristicRouteOptimizer', () => {
   const optimizer = new HeuristicRouteOptimizer();
 
+  it('honors two requested cafe visits before optional high-score diversity stops in a three-hour window', () => {
+    const options = [
+      candidate('hongdae-cafe-a', 'cafe', 126.924, 37.557, {
+        scoreBreakdown: { ...breakdown, total: 0.4 },
+      }),
+      candidate('hongdae-cafe-b', 'cafe', 126.925, 37.558, {
+        scoreBreakdown: { ...breakdown, total: 0.35 },
+      }),
+      candidate('high-score-culture', 'culture', 126.924, 37.558, {
+        scoreBreakdown: { ...breakdown, total: 0.99 },
+      }),
+      candidate('high-score-shopping', 'shopping', 126.924, 37.557, {
+        scoreBreakdown: { ...breakdown, total: 0.98 },
+      }),
+    ];
+    const request = input(options, { endTime: '16:00', requiredActivityCounts: { cafe: 2 } });
+    const route = optimizer.optimize(request);
+    expect(route.map((stop) => stop.placeId)).toEqual(['hongdae-cafe-a', 'hongdae-cafe-b']);
+    expect(route.every((stop) => stop.stopType === 'general')).toBe(true);
+    expect(new RouteConstraintValidator().validate(request, route).valid).toBe(true);
+  });
+
+  it('keeps a hard lunch and two cafes without fabricating must-visit anchors', () => {
+    const cafes = [
+      candidate('cafe-a', 'cafe', 126.924, 37.557, { estimatedStayMinutes: 45 }),
+      candidate('cafe-b', 'cafe', 126.925, 37.558, { estimatedStayMinutes: 45 }),
+    ];
+    const lunch = candidate('korean-lunch', 'restaurant', 126.924, 37.558);
+    const route = optimizer.optimize(
+      input([...cafes, lunch], {
+        endTime: '17:00',
+        requiredActivityCounts: { cafe: 2 },
+        mealWindows: [
+          {
+            mealType: 'lunch',
+            targetTime: '13:00',
+            durationMinutes: 60,
+            cuisinePreferences: ['한식'],
+          },
+        ],
+      }),
+    );
+    expect(route.filter((stop) => stop.stopType === 'meal')).toHaveLength(1);
+    expect(route.filter((stop) => stop.placeId.startsWith('cafe-'))).toHaveLength(2);
+    expect(route.some((stop) => stop.stopType === 'must_visit')).toBe(false);
+  });
+
+  it('rejects an impossible quota and applies the same count gate to preserveOrder edits', () => {
+    const onlyCafe = candidate('only-cafe', 'cafe', 126.924, 37.557);
+    const short = input([onlyCafe], { endTime: '16:00', requiredActivityCounts: { cafe: 2 } });
+    expect(optimizer.optimize(short)).toEqual([]);
+    expect(optimizer.optimize({ ...short, preserveOrder: true })).toEqual([]);
+    const second = candidate('second-cafe', 'cafe', 126.925, 37.558);
+    expect(
+      optimizer.optimize({ ...short, candidates: [onlyCafe, second], preserveOrder: true }),
+    ).toHaveLength(2);
+  });
+
   it('builds a valid geospatial route and puts a 夜は焼肉 candidate in dinner time', () => {
     const meat = candidate('yakiniku', 'restaurant', 127.059, 37.544, {
       place: {
@@ -406,6 +464,27 @@ describe('HeuristicRouteOptimizer', () => {
 });
 
 describe('RouteConstraintValidator', () => {
+  it('does not count wrong source categories, duplicates or invented role labels toward requested cafes', () => {
+    const cafe = candidate('cafe', 'cafe', 126.924, 37.557);
+    const restaurantNamedCafe = candidate('restaurant', 'cafe', 126.925, 37.558, {
+      place: { name: '씨카페', rawCategory: '음식점>양식' },
+    });
+    const original = input([cafe, restaurantNamedCafe]);
+    const route = new HeuristicRouteOptimizer().optimize({ ...original, preserveOrder: true });
+    const result = new RouteConstraintValidator().validate(
+      { ...original, requiredActivityCounts: { cafe: 2 } },
+      route.map((stop) => ({ ...stop, stopType: 'must_visit' })),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.violations.map((v) => v.code)).toContain('REQUIRED_ACTIVITY_COUNT_UNMET');
+    const duplicated = new RouteConstraintValidator().validate(
+      { ...original, requiredActivityCounts: { cafe: 2 } },
+      [route[0]!, { ...route[0]!, order: 2 }],
+    );
+    expect(duplicated.violations.map((v) => v.code)).toEqual(
+      expect.arrayContaining(['DUPLICATE_PLACE', 'REQUIRED_ACTIVITY_COUNT_UNMET']),
+    );
+  });
   it('reports budget, overlap, and stay-duration violations independently', () => {
     const first = candidate('first', 'cafe', 127.04, 37.54, { estimatedCost: 30_000 });
     const second = candidate('second', 'shopping', 127.041, 37.541, {

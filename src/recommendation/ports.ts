@@ -95,7 +95,12 @@ export interface CandidateRanker {
   rank(input: RankCandidatesInput): RankCandidatesResult;
 }
 
+export type RequiredActivityCategory =
+  'cafe' | 'restaurant' | 'shopping' | 'culture' | 'attraction' | 'park';
+
 export interface OptimizeRouteInput {
+  /** Explicit minimum visits, counted by actual verified place category, not role labels. */
+  requiredActivityCounts?: Partial<Record<RequiredActivityCategory, number>>;
   travelDate: string;
   startTime: string;
   endTime: string;
@@ -141,6 +146,7 @@ export interface RouteConstraintViolation {
     | 'OVERLAPPING_STOPS'
     | 'INVALID_STAY_DURATION'
     | 'BUDGET_EXCEEDED'
+    | 'REQUIRED_ACTIVITY_COUNT_UNMET'
     | 'OUTSIDE_KNOWN_OPENING_HOURS';
   placeId?: string;
   message: string;

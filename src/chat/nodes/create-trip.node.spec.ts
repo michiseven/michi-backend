@@ -3,6 +3,28 @@ import { createCreateTripNode } from './create-trip.node';
 import type { ChatState } from '../chat-state';
 
 describe('createCreateTripNode', () => {
+  it('does not claim completion for unknown stroller access or invent airport conditions', async () => {
+    const node = createCreateTripNode({
+      generate: jest.fn().mockResolvedValue({
+        trip: {
+          id: 'family',
+          status: 'ready',
+          stops: [],
+          safetyConstraints: { requiresUserConfirmation: true },
+        },
+      }),
+    } as never);
+    const update = await node({
+      locale: 'ko',
+      messages: [],
+      createTripInput: { text: '유모차' },
+      relaxations: [],
+    } as unknown as ChatState);
+    expect(update.responseMessage).toContain('초안');
+    expect(update.responseMessage).toContain('안전·접근성');
+    expect(update.responseMessage).not.toContain('공항');
+    expect(update.responseMessage).not.toContain('완성되었습니다');
+  });
   it('never claims completion or budget fulfillment for an unverified airport draft', async () => {
     const node = createCreateTripNode({
       generate: jest.fn().mockResolvedValue({

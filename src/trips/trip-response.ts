@@ -317,7 +317,11 @@ export function toTripDto(trip: Trip, editToken?: string): TripDto {
   return {
     id: trip.id,
     isEditable,
-    status: contractAssessment?.status === 'partial' ? 'partial' : trip.status,
+    status:
+      trip.status === 'ready' &&
+      (contractAssessment?.status === 'partial' || requestedSafetyConstraints.length > 0)
+        ? 'partial'
+        : trip.status,
     ...(explicitRequestContract ? { explicitRequestContract, contractAssessment } : {}),
     date: trip.travelDate,
     startDate,

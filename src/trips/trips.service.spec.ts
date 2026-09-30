@@ -199,6 +199,33 @@ describe('completedRouteConstraintFailure', () => {
     expect(completedRouteConstraintFailure(input, route, false)).toBeNull();
   });
 
+  it('blocks publication of one café when the original request requires two', () => {
+    const candidate = restaurantCandidate('카페', '음식점>카페,디저트>카페');
+    candidate.place.category = 'cafe';
+    const input: OptimizeRouteInput = {
+      travelDate: '2026-10-03',
+      startTime: '13:00',
+      endTime: '18:00',
+      budget: null,
+      candidates: [candidate],
+      requiredActivityCounts: { cafe: 2 },
+    };
+    const route: RouteStopPlan[] = [
+      {
+        placeId: candidate.place.placeId,
+        order: 1,
+        arrivalAt: '2026-10-03T04:00:00.000Z',
+        leaveAt: '2026-10-03T05:00:00.000Z',
+        estimatedStayMinutes: 60,
+        estimatedCost: null,
+        reason: 'fixture',
+        scoreBreakdown,
+        stopType: 'general',
+      },
+    ];
+    expect(completedRouteConstraintFailure(input, route, false)).toBe('route_constraints');
+  });
+
   it('accepts a time boundary with free time and discloses its actual last departure', () => {
     const candidate = restaurantCandidate('한식당', '음식점>한식>비빔밥');
     const input: OptimizeRouteInput = {

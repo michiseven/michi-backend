@@ -13,6 +13,7 @@ import type {
 } from './ports';
 import { RouteConstraintValidator } from './route-constraint-validator';
 import { extractBrandKey } from './brand-extractor';
+import { resolveVerifiedPlaceCategory } from '../providers/place/place-normalizer';
 
 const LUNCH_START = '11:30';
 const LUNCH_END = '14:00';
@@ -387,6 +388,24 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
     let previous: RankedCandidate | undefined;
     let knownCost = 0;
     let scheduledRestaurantCount = 0;
+    const scheduledActivityCounts = new Map<string, number>();
+
+    const unmetPriority = (scheduled: ScheduledCandidate): number => {
+      if (Object.keys(input.requiredActivityCounts ?? {}).length === 0) return 0;
+      // Keep an imminent explicit meal ahead of optional activities; do not jump
+      // from the afternoon to a distant dinner window and discard that afternoon.
+      if (
+        scheduledRestaurantCount < (input.mealWindows?.length ?? 0) &&
+        determineStopType(scheduled.candidate, input) === 'meal' &&
+        scheduled.arrival.getTime() <= cursor.getTime() + 60 * 60_000
+      )
+        return 2;
+      const category = resolveVerifiedPlaceCategory(scheduled.candidate.place);
+      const required =
+        Object.entries(input.requiredActivityCounts ?? {}).find(([key]) => key === category)?.[1] ??
+        0;
+      return category && (scheduledActivityCounts.get(category) ?? 0) < required ? 1 : 0;
+    };
 
     const anchorTargetDate =
       isDestinationAnchor && input.anchorTargetTime
@@ -443,6 +462,7 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
         })
         .sort(
           (a, b) =>
+            unmetPriority(b) - unmetPriority(a) ||
             b.utility - a.utility ||
             b.candidate.scoreBreakdown.total - a.candidate.scoreBreakdown.total ||
             a.candidate.place.sourcePlaceId.localeCompare(b.candidate.place.sourcePlaceId),
@@ -456,6 +476,12 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
       previous = next.candidate;
       if (toPlan(next, route.length + 1, input).stopType === 'meal') scheduledRestaurantCount += 1;
       if (next.candidate.place.category) usedCategories.add(next.candidate.place.category);
+      const scheduledCategory = resolveVerifiedPlaceCategory(next.candidate.place);
+      if (scheduledCategory)
+        scheduledActivityCounts.set(
+          scheduledCategory,
+          (scheduledActivityCounts.get(scheduledCategory) ?? 0) + 1,
+        );
       const scheduledBrand = extractBrandKey(next.candidate.place);
       if (scheduledBrand) usedBrands.add(scheduledBrand);
     }
