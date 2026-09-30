@@ -505,14 +505,20 @@ describe('TripsService scoped alternatives', () => {
       trips: repository<Trip>({ findOne: jest.fn().mockResolvedValue(trip) }),
       places: repository<Place>({ createQueryBuilder }),
       spatialAreas: { filterPlaces },
-      placeProvider: { name: 'mock' },
-      ktoProvider: { name: 'mock' },
+      placeProvider: { name: 'mock', mode: 'mock' },
+      ktoProvider: { name: 'mock', mode: 'mock' },
+      crowdProvider: { name: 'mock', mode: 'mock' },
+      routingProvider: { mode: 'mock' },
     });
     const result = await service.getStopAlternatives(trip.id, trip.stops[0]!.id, trip.editToken!);
     expect(filterPlaces).toHaveBeenCalledWith('성수', [local, outside], 0, 0);
     expect(result.alternatives.map((p) => p.placeId)).toEqual(['local']);
     expect(createQueryBuilder).toHaveBeenCalledTimes(1);
     expect(result.alternatives[0]!.description).not.toMatch(/도보 약/);
+    const reloaded = await service.get(trip.id, trip.editToken!);
+    expect(reloaded.warnings.some((warning) => /15:00.*21:00.*360.*自由時間/u.test(warning))).toBe(
+      true,
+    );
   });
 });
 

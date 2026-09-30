@@ -309,7 +309,7 @@ function providerUnavailableFailure(
 
 export function routeFreeTimeWarning(
   input: Pick<OptimizeRouteInput, 'travelDate' | 'endTime'>,
-  route: RouteStopPlan[],
+  route: Array<Pick<RouteStopPlan, 'leaveAt'>>,
   locale: 'ko' | 'ja' = 'ko',
 ): string | null {
   if (route.length === 0) return null;
@@ -2361,6 +2361,22 @@ export class TripsService {
         : []),
     ];
     const tripDto = toTripDto(trip, editToken);
+    // Recompute from persisted timestamps on GET/edit as well, not only in the
+    // one-shot generation envelope. Reloading must not hide unfilled time.
+    const freeTimeWarnings = (
+      tripDto.days?.length
+        ? tripDto.days
+        : [{ date: trip.travelDate, endTime: trip.endTime.slice(0, 5) }]
+    ).flatMap((day) => {
+      const warning = routeFreeTimeWarning(
+        { travelDate: day.date, endTime: (day.endTime ?? tripDto.endTime).slice(0, 5) },
+        (trip.stops ?? [])
+          .filter((stop) => seoulDateString(stop.arrivalAt) === day.date)
+          .map((stop) => ({ leaveAt: stop.leaveAt.toISOString() })),
+        locale,
+      );
+      return warning ? [warning] : [];
+    });
     const safetyConstraintWarnings = tripDto.safetyConstraints
       ? safetyWarnings(tripDto.safetyConstraints)
       : [];
@@ -2385,7 +2401,14 @@ export class TripsService {
         place: this.placeProvider.name,
         crowd: this.crowdProvider.name,
       },
-      warnings: [...new Set([...warnings, ...providerWarnings, ...safetyConstraintWarnings])],
+      warnings: [
+        ...new Set([
+          ...warnings,
+          ...providerWarnings,
+          ...safetyConstraintWarnings,
+          ...freeTimeWarnings,
+        ]),
+      ],
     };
   }
 
