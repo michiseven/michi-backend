@@ -1,8 +1,28 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 import { createCreateTripNode } from './create-trip.node';
 import type { ChatState } from '../chat-state';
+import { PlaceSearchAgentQuestion } from '../../trips/initial-place-search-agent';
 
 describe('createCreateTripNode', () => {
+  it('returns the agent question and retains the original request for the next user answer', async () => {
+    const question = '전통차를 원하세요, 커피를 원하세요?';
+    const node = createCreateTripNode({
+      generate: jest.fn().mockRejectedValue(new PlaceSearchAgentQuestion(question)),
+    } as never);
+    const input = { text: '공덕 카페 11시부터16시', startArea: '공덕' };
+    const update = await node({
+      locale: 'ko',
+      messages: [],
+      createTripInput: input,
+    } as unknown as ChatState);
+    expect(update.responseMessage).toBe(question);
+    expect(update.pendingCreateTripInput).toEqual(input);
+    expect(update.intent).toBe('clarify');
+    expect(update.status).toBe('completed');
+    expect(update.errorCode).toBeNull();
+    expect(update.pendingAction).toBeNull();
+    expect(update.resultTrip).toBeUndefined();
+  });
   it.each(['ko', 'ja'] as const)(
     'connects gap disclosure to a completed itinerary in %s',
     async (locale) => {

@@ -9,6 +9,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ITINERARY_PLACE_PROVIDER } from '../providers/place/place-provider';
+import { PlaceSearchAgentService } from '../providers/place/place-search-agent.service';
+import { searchInitialPlaceWithAgent } from './initial-place-search-agent';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -478,6 +480,7 @@ export class TripsService {
     @Optional()
     @Inject(ITINERARY_PLACE_PROVIDER)
     private readonly itineraryPlaceProvider?: PlaceProvider,
+    @Optional() private readonly placeSearchAgent?: PlaceSearchAgentService,
   ) {}
 
   @LogEvent({
@@ -689,13 +692,29 @@ export class TripsService {
                 variationIndex: Math.max(day.dayNumber - 1, 0),
               }));
         const nearestCrowdArea = await this.spatialAreas.nearestCrowdArea(dayArea);
+        const firstAgentAttempt =
+          day.dayNumber === 1 && roleQueries[0] && this.placeSearchAgent?.isEnabled()
+            ? await searchInitialPlaceWithAgent(
+                this.itineraryPlaceProvider ?? this.placeProvider,
+                {
+                  query: roleQueries[0].query,
+                  area: dayArea,
+                  limit: 15,
+                  role: roleQueries[0].role,
+                },
+                this.placeSearchAgent,
+                dto.locale ?? 'ko',
+              )
+            : null;
         const placeSearchAttempts = await Promise.all(
-          roleQueries.map(({ role, query }) =>
-            searchPlaceWithDiagnostics(
-              this.itineraryPlaceProvider ?? this.placeProvider,
-              { query, area: dayArea, limit: 15, role },
-              role,
-            ),
+          roleQueries.map(({ role, query }, index) =>
+            index === 0 && firstAgentAttempt
+              ? Promise.resolve(firstAgentAttempt)
+              : searchPlaceWithDiagnostics(
+                  this.itineraryPlaceProvider ?? this.placeProvider,
+                  { query, area: dayArea, limit: 15, role },
+                  role,
+                ),
           ),
         );
         const placeSearchDiagnostics: PlaceSearchDiagnostics = summarizePlaceSearchDiagnostics(

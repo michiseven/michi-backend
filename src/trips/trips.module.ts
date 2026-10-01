@@ -18,6 +18,7 @@ import { PlaceDetailsModule } from '../place-details/place-details.module';
 import { PlaceSearchQueryGenerator } from './place-search-query-generator';
 import { TripsController } from './trips.controller';
 import { TripsService } from './trips.service';
+import { PlaceSearchAgentModule } from '../providers/place/place-search-agent.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { TripsService } from './trips.service';
     RecommendationModule,
     TourismFeatureModule,
     PlaceDetailsModule,
+    PlaceSearchAgentModule,
   ],
   controllers: [TripsController],
   providers: [TripsService, PlaceSearchQueryGenerator],

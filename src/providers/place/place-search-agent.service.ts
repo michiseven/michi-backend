@@ -53,6 +53,43 @@ export class PlaceSearchAgentService {
     locale: 'ko' | 'ja' = 'ko',
     parentSignal?: AbortSignal,
   ): Promise<PlaceSearchAgentPublicResult> {
+    const result = await this.searchVerified(request, locale, parentSignal);
+    const observations = result.observations.map((observation) => ({
+      query: observation.query,
+      status: observation.status,
+      eligibleCount: observation.places.length,
+    }));
+    return result.status === 'completed'
+      ? {
+          status: result.status,
+          locale,
+          observations,
+          places: result.places.map((place) => ({
+            key: `${place.provider}:${place.sourcePlaceId}`,
+            name: place.name,
+            category: place.rawCategory,
+            address: place.roadAddress ?? place.address,
+            longitude: place.longitude,
+            latitude: place.latitude,
+            providerMode: place.providerMode,
+          })),
+          routeValidation: 'not_performed' as const,
+          openingHoursVerification: 'unverified' as const,
+        }
+      : { ...result, locale, observations };
+  }
+
+  isEnabled(): boolean {
+    return Boolean(this.client) && this.config.get<string>('LLM_PROVIDER_MODE') === 'live';
+  }
+
+  /** Internal gateway: provider records go to deterministic itinerary validation,
+   * not directly to the public API or the model. */
+  async searchVerified(
+    request: PlaceSearchRequest,
+    locale: 'ko' | 'ja' = 'ko',
+    parentSignal?: AbortSignal,
+  ): Promise<PlaceSearchAgentResult> {
     if (!this.client)
       throw new ServiceUnavailableException({
         code: 'PROVIDER_UNAVAILABLE',
@@ -81,28 +118,6 @@ export class PlaceSearchAgentService {
       },
       signal,
     );
-    const observations = result.observations.map((observation) => ({
-      query: observation.query,
-      status: observation.status,
-      eligibleCount: observation.places.length,
-    }));
-    return result.status === 'completed'
-      ? {
-          status: result.status,
-          locale,
-          observations,
-          places: result.places.map((place) => ({
-            key: `${place.provider}:${place.sourcePlaceId}`,
-            name: place.name,
-            category: place.rawCategory,
-            address: place.roadAddress ?? place.address,
-            longitude: place.longitude,
-            latitude: place.latitude,
-            providerMode: place.providerMode,
-          })),
-          routeValidation: 'not_performed' as const,
-          openingHoursVerification: 'unverified' as const,
-        }
-      : { ...result, locale, observations };
+    return result;
   }
 }

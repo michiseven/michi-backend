@@ -4,6 +4,7 @@ import type { ChatState, ChatUpdate } from '../chat-state';
 import { generationFailure } from '../generation-failure';
 import { groundedRecoveryQuestion } from '../grounded-recovery-question';
 import { isUnassignedGapWarning } from '../../trips/route-unassigned-gap-warnings';
+import { PlaceSearchAgentQuestion } from '../../trips/initial-place-search-agent';
 
 export function createCreateTripNode(tripsService: TripsService, apiKey?: string) {
   const logger = new Logger('CreateTripNode');
@@ -175,6 +176,17 @@ export function createCreateTripNode(tripsService: TripsService, apiKey?: string
         status: 'completed',
       };
     } catch (err) {
+      if (err instanceof PlaceSearchAgentQuestion) {
+        return {
+          responseMessage: err.question,
+          pendingCreateTripInput: input ?? { text: rawText },
+          intent: 'clarify',
+          status: 'completed',
+          errorCode: null,
+          pendingAction: null,
+          actionChips: [],
+        };
+      }
       logger.warn(
         `Trip generation failed in chat: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
       );
