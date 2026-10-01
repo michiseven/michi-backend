@@ -4,6 +4,21 @@ import {
 } from './explicit-request-contract';
 
 describe('explicit request contract', () => {
+  it.each(['3人で鐘路。1人予算80000ウォン', '1人予算80000ウォン。友達3人で鐘路'])(
+    'keeps party size distinct from Japanese per-person budget: %s',
+    (text) => {
+      expect(extractExplicitRequestContract(text)).toMatchObject({
+        partySize: 3,
+        budget: { amountKrw: 80000, scope: 'per_person' },
+      });
+    },
+  );
+  it('preserves total Japanese budget wording', () => {
+    expect(extractExplicitRequestContract('3人で鐘路、全体予算80000ウォン')).toMatchObject({
+      partySize: 3,
+      budget: { amountKrw: 80000, scope: 'total' },
+    });
+  });
   it.each([
     '공덕 호텔11시 체크아웃, 캐리어, 관광11–16시, ICN T1 18시 도착 마감, 비행20:30',
     '孔徳ホテル11時チェックアウト、キャリーケース、観光11〜16時、仁川空港第1ターミナル18時までに到着、フライト20:30',

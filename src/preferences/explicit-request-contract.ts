@@ -182,7 +182,9 @@ export function extractExplicitRequestContract(
       result.startDate = date.toISOString().slice(0, 10);
     } else if (/오늘|今日/u.test(text)) result.startDate = today;
   }
-  const party = text.match(/(?<!\d)(\d{1,2})\s*(?:명|人)(?!당|あたり|\d)/u);
+  const party = text.match(
+    /(?<!\d)(\d{1,2})\s*(?:명|人)(?!당|あたり|当たり|\d|\s*(?:予算|あたり|当たり|\d))/u,
+  );
   if (party && Number(party[1]) > 0) result.partySize = Number(party[1]);
   const adults = text.match(/(?:어른|성인|大人)\s*(\d+)\s*(?:명|人)?/u);
   const children = text.match(/(?:아이|어린이|子供|子ども)[^.!?。！？]{0,12}?(\d+)\s*(?:명|人)/u);
@@ -198,7 +200,7 @@ export function extractExplicitRequestContract(
       result.budget = {
         amountKrw: amount,
         scope:
-          /1\s*인(?:당)?\s*(?:예산|\d)|인당|명당|한\s*사람당|一人(?:あたり|当たり)|1\s*人(?:あたり|당|\s*\d)|per\s*person/iu.test(
+          /1\s*인(?:당)?\s*(?:예산|\d)|인당|명당|한\s*사람당|一人(?:あたり|当たり)|1\s*人(?:あたり|당|\s*(?:予算|\d))|per\s*person/iu.test(
             text,
           )
             ? 'per_person'

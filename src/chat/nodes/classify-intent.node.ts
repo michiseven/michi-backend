@@ -41,6 +41,12 @@ export function createClassifyIntentNode(
       .filter(Boolean)
       .join('\n');
     const deterministicClassification = classifyIntentRuleBased(requestText, hasActiveTrip);
+    if (
+      deterministicClassification.intent === 'summarize_trip' &&
+      !state.modification?.targetStopId
+    ) {
+      return { intent: 'summarize_trip' };
+    }
     const llmClassification = await llmClassifier(
       openaiApiKey,
       requestText,

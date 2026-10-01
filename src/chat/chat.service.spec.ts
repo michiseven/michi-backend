@@ -109,6 +109,39 @@ describe('ChatService', () => {
     expect(thread?.userId).toBe('user-abc');
     expect(thread?.threadSecret).toBe(res.threadSecret);
   });
+  it.each([
+    ['ko', '현재 전체 일정을 요약해줘'],
+    ['ja', '現在の旅程全体を要約して'],
+  ])(
+    'summarizes the reloaded active departure trip in %s without generating or changing it',
+    async (locale, message) => {
+      const tripRepo = mockTripsRepo as { findOne: jest.Mock<() => Promise<unknown>> };
+      const tripsService = mockTripsService as { generate: jest.Mock; patchStops: jest.Mock };
+      tripRepo.findOne.mockResolvedValue({
+        id: 'trip',
+        preference: {
+          originalText:
+            '공덕 호텔11시 체크아웃, 캐리어, 관광11–16시, ICN T1 18시 도착 마감, 비행20:30',
+        },
+        stops: [{ order: 1, place: { name: '공덕소담길' } }],
+      });
+      const { threadId, threadSecret } = await service.createThread({
+        locale: locale as 'ko' | 'ja',
+        currentTripId: 'trip',
+      });
+      const result = await service.sendMessage(
+        threadId,
+        { locale: locale as 'ko' | 'ja', message },
+        { threadSecret },
+      );
+      expect(result.responseMessage).toContain('16:00');
+      expect(result.responseMessage).toContain('18:00');
+      expect(result.responseMessage).toContain('20:30');
+      expect(result.responseMessage).toContain(locale === 'ko' ? '미확인' : '未確認');
+      expect(tripsService.generate).not.toHaveBeenCalled();
+      expect(tripsService.patchStops).not.toHaveBeenCalled();
+    },
+  );
 
   it('allows access to thread with valid threadSecret or matching userId', async () => {
     const thread = await service.createThread({ locale: 'ko' }, 'user-owner');

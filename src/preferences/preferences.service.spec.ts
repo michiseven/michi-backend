@@ -7,6 +7,18 @@ import { HeuristicRouteOptimizer } from '../recommendation/heuristic-route-optim
 import type { RankedCandidate } from '../recommendation/ports';
 
 describe('PreferencesService', () => {
+  it.each([
+    ['1人予算80000ウォン', 240000],
+    ['全体予算80000ウォン', 80000],
+  ])('computes a 3-person trip total from %s', async (budget, expected) => {
+    const schema = new TripPreferenceSchemaValidator();
+    const result = await new PreferencesService(new MockTripPreferenceParser(schema), schema).parse(
+      { text: `3人で鐘路10〜16時、カフェ。${budget}` },
+    );
+    expect(result.preference.partySize).toBe(3);
+    expect(result.preference.totalBudgetKrw).toBe(expected);
+    expect(result.preference.budget).toBe(expected);
+  });
   it('retains the realistic Japanese history request as a separate traditional tea requirement', async () => {
     const schema = new TripPreferenceSchemaValidator();
     const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);

@@ -1,6 +1,18 @@
 import { classifyIntentRuleBased, extractExplicitSeoulArea } from './chat-intent';
 
 describe('classifyIntentRuleBased', () => {
+  it.each(['현재 전체 일정을 요약해줘', '現在の旅程全体を要約して'])(
+    'routes a current-trip summary as read-only: %s',
+    (text) => {
+      expect(classifyIntentRuleBased(text, true).intent).toBe('summarize_trip');
+      expect(classifyIntentRuleBased(text, false).intent).not.toBe('summarize_trip');
+    },
+  );
+  it('retains confirmed edit routing when an edit also asks for a summary', () => {
+    expect(classifyIntentRuleBased('1번째 카페를 바꾸고 전체 일정을 요약해줘', true).intent).toBe(
+      'modify_trip',
+    );
+  });
   it('asks exactly one structured meal question for a Japanese broad food request before creation', () => {
     expect(classifyIntentRuleBased('弘大で午後にグルメとカフェを楽しみたい', false)).toMatchObject({
       intent: 'clarify',

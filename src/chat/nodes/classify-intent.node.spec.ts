@@ -3,6 +3,18 @@ import { createClassifyIntentNode } from './classify-intent.node';
 import type { ChatState } from '../chat-state';
 
 describe('createClassifyIntentNode meal clarification contract', () => {
+  it.each(['현재 전체 일정을 요약해줘', '現在の旅程全体を要約して'])(
+    'routes the natural current-trip summary without model interpretation: %s',
+    async (text) => {
+      const llm = jest.fn().mockResolvedValue({ intent: 'create_trip' });
+      const result = await createClassifyIntentNode(
+        'test',
+        llm as never,
+      )({ currentTripId: 'trip', messages: [new HumanMessage(text)], locale: 'ko' } as ChatState);
+      expect(result.intent).toBe('summarize_trip');
+      expect(llm).not.toHaveBeenCalled();
+    },
+  );
   it('does not restart meal choice or generation for an active airport/luggage followup', async () => {
     const node = createClassifyIntentNode(
       'test',

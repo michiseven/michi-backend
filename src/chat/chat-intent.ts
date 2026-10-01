@@ -1,4 +1,4 @@
-export type IntentType = 'qa' | 'clarify' | 'create_trip' | 'modify_trip';
+export type IntentType = 'qa' | 'clarify' | 'create_trip' | 'modify_trip' | 'summarize_trip';
 
 export interface ClassifiedIntent {
   intent: IntentType;
@@ -200,7 +200,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
 
   // 1. Check for Modification requests if active trip exists or explicit modification keywords
   const isModifyKeyword =
-    /바꿔|교체|변경|빼줘|삭제|제외|바꿀래|変え|変更|削除|抜いて|別の|チェンジ/i.test(trimmed);
+    /바꿔|바꾸|교체|변경|빼줘|삭제|제외|바꿀래|変え|変更|削除|抜いて|別の|チェンジ/i.test(trimmed);
 
   if (
     isModifyKeyword &&
@@ -208,7 +208,7 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
   ) {
     const isRemove =
       /빼줘|삭제|제외|抜いて|削除/.test(trimmed) &&
-      !/바꿔|교체|변경|変え|変更|チェンジ/.test(trimmed);
+      !/바꿔|바꾸|교체|변경|変え|変更|チェンジ/.test(trimmed);
     const action: 'remove' | 'replace' = isRemove ? 'remove' : 'replace';
 
     // Extract order (e.g. 1번째, 2번째, 첫번째, 두번째, 1番目, 2番目, 1つ目, 2つ目)
@@ -253,6 +253,15 @@ export function classifyIntentRuleBased(message: string, hasActiveTrip: boolean)
         replacementQuery: action === 'replace' ? trimmed : replacementQuery,
       },
     };
+  }
+
+  // A current-trip summary is read-only. Explicit mutation above retains priority.
+  if (
+    hasActiveTrip &&
+    /요약|정리해|要約|まとめて/iu.test(trimmed) &&
+    /일정|여행|코스|旅程|プラン|旅行|コース/iu.test(trimmed)
+  ) {
+    return { intent: 'summarize_trip' };
   }
 
   // 2. Check for QA / Explanation queries (questions about places, attractions, hours, prices, tips)

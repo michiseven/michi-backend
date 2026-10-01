@@ -13,6 +13,28 @@ function dtoAirportRoles(dto: ReturnType<typeof toTripDto>): string[] {
 }
 
 describe('trip API response', () => {
+  it('exposes the original per-person budget and actual party after JSON persistence/reload', () => {
+    const contract = extractExplicitRequestContract('友達3人で鐘路。1人予算80000ウォン');
+    const trip = {
+      id: 'budget',
+      status: 'ready',
+      travelDate: '2026-10-03',
+      startTime: '10:00',
+      endTime: '16:00',
+      budgetKrw: 240000,
+      stops: [],
+      preference: {
+        validatedJson: {
+          partySize: 3,
+          explicitRequestContract: JSON.parse(JSON.stringify(contract)) as unknown,
+        },
+      },
+    } as unknown as Trip;
+    expect(toTripDto(trip)).toMatchObject({
+      budget: 240000,
+      explicitRequestContract: { partySize: 3, budget: { amountKrw: 80000, scope: 'per_person' } },
+    });
+  });
   it('preserves departure clocks and hotel/luggage when the stored contract is reloaded', () => {
     const contract = extractExplicitRequestContract(
       '공덕 호텔11시 체크아웃, 캐리어, 관광11–16시, ICN T1 18시 도착 마감, 비행20:30',
