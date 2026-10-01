@@ -93,10 +93,10 @@ export function createExecuteModificationNode(tripsService: TripsService) {
             : 'プランの変更中にエラーが発生しました。';
 
       return {
-        status: 'failed',
+        status: 'awaiting_confirmation',
         errorCode: isForbidden ? 'TRIP_EDIT_FORBIDDEN' : 'MUTATION_FAILED',
         responseMessage: errMsg,
-        pendingAction: null,
+        pendingAction: pending,
       };
     }
   };

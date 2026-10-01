@@ -492,9 +492,93 @@ describe('LangGraph Chat Workflow (createChatGraph)', () => {
       config,
     );
 
-    expect(resumedState.status).toBe('failed');
+    expect(resumedState.status).toBe('awaiting_confirmation');
     expect(resumedState.errorCode).toBe('TRIP_EDIT_FORBIDDEN');
     expect(resumedState.responseMessage).toContain('권한이 없습니다');
+    expect(resumedState.pendingAction).toEqual(pausedState.pendingAction);
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(1);
+    const retry: any = await (graph as any).invoke(
+      new Command({ resume: { decision: 'approve', chosenPlaceId: chosenAltId } }),
+      {
+        configurable: { thread_id: threadId, editToken: 'valid-secret-edit-token-123' },
+      },
+    );
+    expect(retry.status).toBe('completed');
+    expect(retry.errorCode).toBeNull();
+    expect(retry.pendingAction).toBeNull();
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(2);
+    await (graph as any).invoke(
+      new Command({ resume: { decision: 'approve', chosenPlaceId: chosenAltId } }),
+      config,
+    );
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(2);
+  });
+
+  it('reopens confirmation after a failed mutation and supports a human rejection without retrying automatically', async () => {
+    const config = {
+      configurable: { thread_id: 'retry-then-reject', editToken: 'valid-secret-edit-token-123' },
+    };
+    const paused: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('2번째 식당 다른 곳으로 교체해줘')],
+        currentTripId: 'trip-100',
+        locale: 'ko',
+      },
+      config,
+    );
+    mockTripsService.patchStops.mockRejectedValueOnce(new Error('temporary unavailable'));
+    const failed: any = await (graph as any).invoke(
+      new Command({
+        resume: { decision: 'approve', chosenPlaceId: paused.alternatives[0].placeId },
+      }),
+      config,
+    );
+    expect(failed.status).toBe('awaiting_confirmation');
+    expect(failed.errorCode).toBe('MUTATION_FAILED');
+    expect(failed.pendingAction).toEqual(paused.pendingAction);
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(1);
+    const rejected: any = await (graph as any).invoke(
+      new Command({ resume: { decision: 'reject' } }),
+      config,
+    );
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.errorCode).toBeNull();
+    expect(rejected.pendingAction).toBeNull();
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a fresh approval interrupt after an invalid candidate and accepts a later valid choice', async () => {
+    const config = {
+      configurable: {
+        thread_id: 'retry-invalid-candidate',
+        editToken: 'valid-secret-edit-token-123',
+      },
+    };
+    const paused: any = await graph.invoke(
+      {
+        messages: [new HumanMessage('2번째 식당 다른 곳으로 교체해줘')],
+        currentTripId: 'trip-100',
+        locale: 'ko',
+      },
+      config,
+    );
+    const invalid: any = await (graph as any).invoke(
+      new Command({ resume: { decision: 'approve', chosenPlaceId: 'not-in-candidates' } }),
+      config,
+    );
+    expect(invalid.status).toBe('awaiting_confirmation');
+    expect(invalid.errorCode).toBe('INVALID_CHOSEN_PLACE');
+    expect(invalid.pendingAction).toEqual(paused.pendingAction);
+    expect(mockTripsService.patchStops).not.toHaveBeenCalled();
+    const approved: any = await (graph as any).invoke(
+      new Command({
+        resume: { decision: 'approve', chosenPlaceId: paused.alternatives[0].placeId },
+      }),
+      config,
+    );
+    expect(approved.status).toBe('completed');
+    expect(approved.errorCode).toBeNull();
+    expect(mockTripsService.patchStops).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT fallback to 1st stop when target is ambiguous, returning clarify options instead', async () => {

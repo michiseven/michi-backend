@@ -122,13 +122,17 @@ export function createChatGraph(deps: ChatGraphDependencies): ChatWorkflowGraph 
     })
 
     .addConditionalEdges('request_approval', (state: ChatState) => {
+      if (state.status === 'awaiting_confirmation' && state.pendingAction)
+        return 'request_approval';
       if (state.status === 'rejected' || state.status === 'failed') {
         return END;
       }
       return 'execute_modification';
     })
 
-    .addEdge('execute_modification', END);
+    .addConditionalEdges('execute_modification', (state: ChatState) =>
+      state.status === 'awaiting_confirmation' && state.pendingAction ? 'request_approval' : END,
+    );
 
   return workflow.compile({
     checkpointer: deps.checkpointer,

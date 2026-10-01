@@ -18,6 +18,7 @@ export function createRequestApprovalNode() {
     if (resumeValue.decision === 'reject') {
       return Promise.resolve({
         status: 'rejected',
+        errorCode: null,
         responseMessage: isKo
           ? `일정 수정을 취소했습니다. 기존 일정이 그대로 유지됩니다. 😊`
           : `プランの変更をキャンセルしました。元の旅程がそのまま維持されます。😊`,
@@ -32,17 +33,18 @@ export function createRequestApprovalNode() {
 
         if (!chosenId || !validAlt) {
           return Promise.resolve({
-            status: 'failed',
+            status: 'awaiting_confirmation',
             responseMessage: isKo
               ? '유효한 대체 장소가 선택되지 않았습니다. 추천 목록에서 장소를 선택해 주세요.'
               : '有効な代替スポットが選択されませんでした。おすすめリストからお選びください。',
             errorCode: 'INVALID_CHOSEN_PLACE',
-            pendingAction: null,
+            pendingAction: pending,
           });
         }
 
         return Promise.resolve({
           status: 'completed',
+          errorCode: null,
           modification: {
             ...state.modification,
             action: 'replace',
@@ -56,6 +58,7 @@ export function createRequestApprovalNode() {
       // Remove approval
       return Promise.resolve({
         status: 'completed',
+        errorCode: null,
         modification: {
           ...state.modification,
           action: 'remove',
