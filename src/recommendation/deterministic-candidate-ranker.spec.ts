@@ -1,4 +1,5 @@
 import type { ParsedTripPreference } from '../preferences/preference.types';
+import { HeuristicRouteOptimizer } from './heuristic-route-optimizer';
 import type { CrowdObservation } from '../providers/crowd/crowd-provider';
 import {
   DeterministicCandidateRanker,
@@ -67,6 +68,36 @@ const crowd: CrowdObservation = {
 
 describe('DeterministicCandidateRanker', () => {
   const ranker = new DeterministicCandidateRanker();
+  it('preserves explicit stroll time without changing cafes or fixed appointments', () => {
+    const result = ranker.rank({
+      preference: { ...preference, interests: ['stroll', 'cafe'] },
+      activityDurations: { stroll: 20 },
+      places: [
+        place('street', 'stroll', 127.04, 37.55, { estimatedStayMinutes: 60 }),
+        place('park', 'park', 127.04, 37.55),
+        place('cafe', 'cafe', 127.04, 37.55, { estimatedStayMinutes: 45 }),
+        place('appointment', 'park', 127.04, 37.55, {
+          isAnchor: true,
+          fixedAppointment: true,
+          estimatedStayMinutes: 90,
+        }),
+      ],
+      crowd: null,
+    });
+    expect(
+      Object.fromEntries(result.candidates.map((c) => [c.place.placeId, c.estimatedStayMinutes])),
+    ).toEqual({ street: 20, park: 20, cafe: 45, appointment: 90 });
+    const route = new HeuristicRouteOptimizer().optimize({
+      travelDate: '2026-10-03',
+      startTime: '11:00',
+      endTime: '16:00',
+      budget: null,
+      candidates: result.candidates.filter((c) => c.place.placeId === 'street'),
+    });
+    expect(route).toHaveLength(1);
+    expect(route[0]!.estimatedStayMinutes).toBe(20);
+    expect(Date.parse(route[0]!.leaveAt) - Date.parse(route[0]!.arrivalAt)).toBe(20 * 60_000);
+  });
   const places = [
     place('cafe-near', 'cafe', 127.044, 37.546, {
       estimatedCostKrw: 12_000,

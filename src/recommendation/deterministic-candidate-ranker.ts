@@ -323,6 +323,16 @@ function intervalOverlapMinutes(
   return Math.max(0, Math.min(closes, end) - Math.max(opens, start));
 }
 
+function candidateStayMinutes(place: CandidatePlace, input: RankCandidatesInput): number {
+  return !place.isAnchor &&
+    !place.fixedAppointment &&
+    input.preference.interests.includes('stroll') &&
+    (place.category === 'stroll' || place.category === 'park') &&
+    input.activityDurations?.stroll !== undefined
+    ? input.activityDurations.stroll
+    : (place.estimatedStayMinutes ?? (place.isAnchor ? 30 : defaultStayMinutes(place.category)));
+}
+
 function timeScore(place: CandidatePlace, input: RankCandidatesInput): number {
   if (!place.openingHours || place.openingHours.length === 0) return 0.5;
   const overlap = Math.max(
@@ -330,7 +340,7 @@ function timeScore(place: CandidatePlace, input: RankCandidatesInput): number {
       intervalOverlapMinutes(interval, input.preference.startTime, input.preference.endTime),
     ),
   );
-  if (overlap >= (place.estimatedStayMinutes ?? defaultStayMinutes(place.category))) return 1;
+  if (overlap >= candidateStayMinutes(place, input)) return 1;
   return overlap > 0 ? 0.4 : 0;
 }
 
@@ -461,8 +471,7 @@ export class DeterministicCandidateRanker implements CandidateRanker {
         place,
         estimatedCost: place.estimatedCostKrw ?? null,
         priceEvidence: place.priceEvidence ?? null,
-        estimatedStayMinutes:
-          place.estimatedStayMinutes ?? (place.isAnchor ? 30 : defaultStayMinutes(place.category)),
+        estimatedStayMinutes: candidateStayMinutes(place, input),
         reason: this.reason(input, place, components),
         scoreBreakdown: components,
         isAnchor: place.isAnchor,

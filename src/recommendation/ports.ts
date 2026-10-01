@@ -78,6 +78,8 @@ export interface RankedCandidate {
 }
 
 export interface RankCandidatesInput {
+  /** Explicit user activity duration, distinct from transfer estimates. */
+  activityDurations?: { stroll: number };
   preference: ParsedTripPreference;
   places: CandidatePlace[];
   crowd: CrowdObservation | null;

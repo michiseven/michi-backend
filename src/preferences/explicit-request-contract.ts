@@ -1,4 +1,5 @@
 import { extractScopedActivityCounts } from './activity-count-contract';
+import { extractStrollDurationContract } from './stroll-duration-contract';
 
 export type ActivityCounts = Partial<
   Record<'cafe' | 'park' | 'restaurant' | 'culture' | 'attraction', number>
@@ -14,6 +15,8 @@ export interface ExplicitRequestContract {
   requiredActivityCounts?: ActivityCounts;
   dailyActivityCounts?: ActivityCounts;
   activityCountsByDay?: Record<number, ActivityCounts>;
+  activityDurations?: { stroll: number };
+  activityDurationsByDay?: Record<number, { stroll: number }>;
   airport?: {
     role: 'arrival' | 'departure' | 'unknown';
     name: 'ICN' | 'GMP' | 'unspecified';
@@ -130,6 +133,7 @@ export function extractExplicitRequestContract(
   now = new Date(),
 ): ExplicitRequestContract {
   const result: ExplicitRequestContract = {};
+  Object.assign(result, extractStrollDurationContract(text));
   Object.assign(result, extractScopedActivityCounts(text, explicitActivityCounts));
   const compactRange = text.match(
     /(?<!\d)(\d{1,2})\s*(?:~|〜|～|[-–])\s*(\d{1,2})\s*(?:시|時)(?!\d)/u,

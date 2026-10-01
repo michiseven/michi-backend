@@ -1129,6 +1129,9 @@ export class TripsService {
         }));
 
         const ranking = this.ranker.rank({
+          activityDurations:
+            explicitRequestContract.activityDurationsByDay?.[day.dayNumber] ??
+            explicitRequestContract.activityDurations,
           preference: dayPreference,
           places: enrichedCandidates,
           crowd: crowdWithReference,
