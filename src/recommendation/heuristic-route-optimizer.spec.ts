@@ -76,6 +76,54 @@ function seoulTime(iso: string): string {
 
 describe('HeuristicRouteOptimizer', () => {
   const optimizer = new HeuristicRouteOptimizer();
+  it('schedules total stroll20 once, not20 at every available stroll venue', () => {
+    const routeInput = input(
+      [
+        candidate('street-a', 'stroll', 126.95, 37.54, { estimatedStayMinutes: 20 }),
+        candidate('street-b', 'stroll', 126.951, 37.54, { estimatedStayMinutes: 20 }),
+        candidate('park', 'park', 126.952, 37.54, { estimatedStayMinutes: 20 }),
+        candidate('cafe', 'cafe', 126.953, 37.54),
+      ],
+      { activityDurations: { stroll: 20 } },
+    );
+    const route = optimizer.optimize(routeInput);
+    expect(route).toHaveLength(2);
+    expect(
+      route
+        .filter((stop) => stop.placeId !== 'cafe')
+        .reduce((sum, stop) => sum + stop.estimatedStayMinutes, 0),
+    ).toBe(20);
+    const overfilled = optimizer.optimize({ ...routeInput, preserveOrder: true });
+    expect(overfilled).toEqual([]);
+  });
+  it('rejects removal of the requested duration instead of publishing a cafe-only route', () => {
+    expect(
+      optimizer.optimize(
+        input([candidate('cafe', 'cafe', 126.95, 37.54)], { activityDurations: { stroll: 20 } }),
+      ),
+    ).toEqual([]);
+  });
+  it('lets an intermediate day defer trip-wide time but forbids adding stroll after its budget is consumed', () => {
+    const candidates = [candidate('cafe', 'cafe', 126.95, 37.54)];
+    expect(
+      optimizer.optimize(
+        input(candidates, { activityDurations: { stroll: 20 }, activityDurationLimitOnly: true }),
+      ),
+    ).toHaveLength(1);
+    expect(
+      optimizer
+        .optimize(
+          input(
+            [
+              ...candidates,
+              candidate('street', 'stroll', 126.951, 37.54, { estimatedStayMinutes: 20 }),
+            ],
+            { activityDurations: { stroll: 0 } },
+          ),
+        )
+        .map((stop) => stop.placeId),
+    ).toEqual(['cafe']);
+  });
   it.each([
     ['17:00', 60, 2],
     ['17:00', 90, 0],

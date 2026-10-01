@@ -51,6 +51,7 @@ import { SeoulSpatialAreaService } from '../providers/place/seoul-spatial-area.s
 import { verifiedPlacePrice } from '../providers/place/place-price-evidence';
 import { incompletePriceWarning } from './trip-price-coverage';
 import { routeUnassignedGapWarnings } from './route-unassigned-gap-warnings';
+import { isTimedStroll } from '../recommendation/activity-duration';
 import { allowedPlaceSourcesForTrip } from './trip-place-source-policy';
 
 export function completeRouteCost(route: Array<{ estimatedCost: number | null }>): number | null {
@@ -1065,7 +1066,30 @@ export class TripsService {
         // Area matching is performed by the spatial filter above. A requested
         // category is a hard candidate contract, not merely a ranking bonus.
         // Anchors remain because the user explicitly fixed them.
-        const dayCandidateRoles = candidateRolesForDay(day);
+        const daySpecificDuration = explicitRequestContract.activityDurationsByDay?.[day.dayNumber];
+        const priorPlaces = new Map(
+          allRankings
+            .flatMap((item) => item.candidates)
+            .map((item) => [item.place.placeId, item.place]),
+        );
+        const consumedStroll = allSavedStops.reduce((sum, stop) => {
+          const place = priorPlaces.get(stop.placeId);
+          return place && isTimedStroll(place) ? sum + stop.estimatedStayMinutes : sum;
+        }, 0);
+        const dayActivityDurations =
+          daySpecificDuration ??
+          (explicitRequestContract.activityDurations
+            ? {
+                stroll: Math.max(
+                  0,
+                  explicitRequestContract.activityDurations.stroll - consumedStroll,
+                ),
+              }
+            : undefined);
+        const dayCandidateRoles = candidateRolesForDay(day).filter(
+          (role) =>
+            !(role === 'stroll' && !daySpecificDuration && dayActivityDurations?.stroll === 0),
+        );
         const categoryMatchedCandidates =
           dayCandidateRoles.length > 0
             ? uniqueDayCandidates.filter(
@@ -1214,6 +1238,8 @@ export class TripsService {
           ),
         );
         const routeInput = {
+          activityDurations: dayActivityDurations,
+          activityDurationLimitOnly: !daySpecificDuration && day.dayNumber !== tripDays.length,
           travelDate: dayDate,
           startTime: day.startTime,
           endTime: day.endTime,
@@ -2251,6 +2277,22 @@ export class TripsService {
       const dayCandidates = dayStops.map(toCandidate);
       candidates.push(...dayCandidates);
       const editRouteInput: OptimizeRouteInput = {
+        activityDurations:
+          contract?.activityDurationsByDay?.[day.dayNumber] ??
+          (contract?.activityDurations
+            ? {
+                stroll:
+                  contract.activityDurations.stroll -
+                  proposedStops
+                    .filter(
+                      (stop) =>
+                        stopDate(stop) !== day.date &&
+                        stop.stopType !== 'fixed_appointment' &&
+                        (stop.place.category === 'stroll' || stop.place.category === 'park'),
+                    )
+                    .reduce((sum, stop) => sum + stop.estimatedStayMinutes, 0),
+              }
+            : undefined),
         travelDate: day.date!,
         startTime: ('startTime' in day ? day.startTime : trip.startTime).slice(0, 5),
         endTime: ('endTime' in day ? day.endTime : trip.endTime).slice(0, 5),

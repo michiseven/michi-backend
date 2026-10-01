@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { resolveVerifiedPlaceCategory } from '../providers/place/place-normalizer';
+import { strollMinutes } from './activity-duration';
 import type {
   CandidatePlace,
   OpeningInterval,
@@ -123,6 +124,20 @@ export class RouteConstraintValidator implements RouteConstraintValidatorPort {
         code: 'BUDGET_EXCEEDED',
         message: 'The sum of known stop costs exceeds the requested budget.',
       });
+    }
+    if (input.activityDurations?.stroll !== undefined) {
+      const actual = strollMinutes(input, route);
+      if (
+        !Number.isSafeInteger(input.activityDurations.stroll) ||
+        input.activityDurations.stroll < 0 ||
+        (input.activityDurationLimitOnly
+          ? actual > input.activityDurations.stroll
+          : actual !== input.activityDurations.stroll)
+      )
+        violations.push({
+          code: 'ACTIVITY_DURATION_UNMET',
+          message: `Requested total stroll ${input.activityDurations.stroll} minutes; scheduled ${actual}.`,
+        });
     }
     // Validate published and edited routes independently of the optimizer.
     // Repeating the same place or relabelling a shop as a cafe cannot satisfy a quota.

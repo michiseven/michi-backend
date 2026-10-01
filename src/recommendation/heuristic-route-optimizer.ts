@@ -14,6 +14,7 @@ import type {
 import { RouteConstraintValidator } from './route-constraint-validator';
 import { extractBrandKey } from './brand-extractor';
 import { resolveVerifiedPlaceCategory } from '../providers/place/place-normalizer';
+import { isTimedStroll, strollMinutes } from './activity-duration';
 
 const LUNCH_START = '11:30';
 const LUNCH_END = '14:00';
@@ -429,6 +430,13 @@ export class HeuristicRouteOptimizer implements RouteOptimizer {
     while (remaining.length > 0) {
       const feasible = remaining
         .filter((candidate) => {
+          if (
+            input.activityDurations?.stroll !== undefined &&
+            isTimedStroll(candidate.place) &&
+            strollMinutes(input, route) + candidate.estimatedStayMinutes >
+              input.activityDurations.stroll
+          )
+            return false;
           // Prevent multiple stops of the exact same brand in a single route
           const brand = extractBrandKey(candidate.place);
           if (

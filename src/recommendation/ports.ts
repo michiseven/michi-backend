@@ -101,6 +101,10 @@ export type RequiredActivityCategory =
   'cafe' | 'restaurant' | 'shopping' | 'culture' | 'attraction' | 'park';
 
 export interface OptimizeRouteInput {
+  /** Total activity time across this route, never multiplied by venue count. */
+  activityDurations?: { stroll: number };
+  /** Intermediate days may defer a trip-wide duration, but never exceed it. */
+  activityDurationLimitOnly?: boolean;
   /** Explicit minimum visits, counted by actual verified place category, not role labels. */
   requiredActivityCounts?: Partial<Record<RequiredActivityCategory, number>>;
   /** Plan toward a trip-wide quota without making this day its hard deadline. */
@@ -149,6 +153,7 @@ export interface RouteConstraintViolation {
     | 'OUTSIDE_TRIP_WINDOW'
     | 'OVERLAPPING_STOPS'
     | 'INVALID_STAY_DURATION'
+    | 'ACTIVITY_DURATION_UNMET'
     | 'BUDGET_EXCEEDED'
     | 'REQUIRED_ACTIVITY_COUNT_UNMET'
     | 'OUTSIDE_KNOWN_OPENING_HOURS';
