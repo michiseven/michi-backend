@@ -58,6 +58,38 @@ describe('replacement request hard constraints', () => {
     const trips = { findOne: jest.fn().mockResolvedValue(trip) } as unknown as Repository<Trip>;
     return { qb, places, trips, find: createFindReplacementCandidatesNode(places, trips) };
   }
+  it('shows one physical 비파티세리 venue and fills the choice limit with distinct eligible cafes', async () => {
+    const duplicate = (id: string, longitude: number): Place => ({
+      ...candidate(id, '비파티세리 공덕점', '음식점>카페', [longitude, 37.544]),
+      source: 'naver-local',
+      sourcePlaceId: id,
+      roadAddress: '서울특별시 마포구 마포대로 14길 23',
+    });
+    const rows = [
+      duplicate('duplicate-b', 126.95106),
+      duplicate('duplicate-a', 126.951),
+      duplicate('duplicate-c', 126.95105),
+      candidate('other-1', '공덕 커피', '음식점>카페', [126.952, 37.544]),
+      candidate('other-2', '마포 찻집', '음식점>카페', [126.953, 37.544]),
+    ];
+    const state = {
+      locale: 'ko',
+      currentTripId: 'trip',
+      messages: [new HumanMessage('1번째 장소를 다른 카페로 바꿔줘')],
+      modification: { action: 'replace', targetStopId: 's1', replacementQuery: '다른 카페' },
+    } as ChatState;
+    const result = (await setup(rows).find(state)) as Partial<ChatState>;
+    expect(result.alternatives?.map((p) => p.placeId)).toEqual([
+      'duplicate-a',
+      'other-1',
+      'other-2',
+    ]);
+    expect(result.pendingAction?.alternatives).toEqual(result.alternatives);
+    const reordered = (await setup([...rows].reverse()).find(state)) as Partial<ChatState>;
+    expect(reordered.alternatives).toEqual(result.alternatives);
+    const one = (await setup(rows.slice(0, 3)).find(state)) as Partial<ChatState>;
+    expect(one.alternatives).toHaveLength(1);
+  });
 
   it('retains Hongdae station radius through unresolved target selection; excludes Gongdeok, study cafes and source restaurants', async () => {
     const { trips, find, qb } = setup([

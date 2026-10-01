@@ -18,6 +18,7 @@ import {
   hasTraditionalTeaEvidence,
   requestsTraditionalTea,
 } from '../../preferences/traditional-tea';
+import { deduplicateReplacementPlaces } from './replacement-place-deduplication';
 
 type ReplacementCategory = 'cafe' | 'restaurant' | 'shopping' | 'culture' | 'attraction';
 
@@ -223,30 +224,37 @@ export function createFindReplacementCandidatesNode(
     candidates.sort((left, right) => {
       const leftDistance = distanceMeters(centerLocation, left.location);
       const rightDistance = distanceMeters(centerLocation, right.location);
-      if (leftDistance == null && rightDistance == null) return left.name.localeCompare(right.name);
+      if (leftDistance == null && rightDistance == null)
+        return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
       if (leftDistance == null) return 1;
       if (rightDistance == null) return -1;
-      return leftDistance - rightDistance || left.name.localeCompare(right.name);
+      return (
+        leftDistance - rightDistance ||
+        left.name.localeCompare(right.name) ||
+        left.id.localeCompare(right.id)
+      );
     });
 
-    const alternatives: ReplacementCandidate[] = candidates.slice(0, 3).map((p) => {
-      const priceInfo = verifiedPlacePrice(p.estimatedCostKrw, p.priceEvidence);
-      const measuredDistance = distanceMeters(centerLocation, p.location);
-      const distanceText = measuredDistance != null ? `${measuredDistance}m` : '';
+    const alternatives: ReplacementCandidate[] = deduplicateReplacementPlaces(candidates)
+      .slice(0, 3)
+      .map((p) => {
+        const priceInfo = verifiedPlacePrice(p.estimatedCostKrw, p.priceEvidence);
+        const measuredDistance = distanceMeters(centerLocation, p.location);
+        const distanceText = measuredDistance != null ? `${measuredDistance}m` : '';
 
-      return {
-        placeId: p.id,
-        name: p.name,
-        category: resolveVerifiedPlaceCategory(p) || 'unknown',
-        distanceMeters: measuredDistance,
-        reason: isKo
-          ? `요청 업종과 지역 조건으로 걸렀습니다. ${requestedArea || '기존 장소'} 기준 직선거리 ${distanceText}이며 실제 도보 경로와 조용한 분위기는 미확인입니다.`
-          : `指定カテゴリとエリアの条件で絞り込みました。${requestedArea || '元のスポット'}からの直線距離は${distanceText}です。実際の徒歩ルートと静かな雰囲気は未確認です。`,
-        evidenceStatus: priceInfo ? 'verified' : 'unverified',
-        estimatedCost: priceInfo?.estimatedCostKrw ?? null,
-        address: p.roadAddress || p.address || null,
-      };
-    });
+        return {
+          placeId: p.id,
+          name: p.name,
+          category: resolveVerifiedPlaceCategory(p) || 'unknown',
+          distanceMeters: measuredDistance,
+          reason: isKo
+            ? `요청 업종과 지역 조건으로 걸렀습니다. ${requestedArea || '기존 장소'} 기준 직선거리 ${distanceText}이며 실제 도보 경로와 조용한 분위기는 미확인입니다.`
+            : `指定カテゴリとエリアの条件で絞り込みました。${requestedArea || '元のスポット'}からの直線距離は${distanceText}です。実際の徒歩ルートと静かな雰囲気は未確認です。`,
+          evidenceStatus: priceInfo ? 'verified' : 'unverified',
+          estimatedCost: priceInfo?.estimatedCostKrw ?? null,
+          address: p.roadAddress || p.address || null,
+        };
+      });
 
     const pendingAction: PendingTripMutation = {
       type: 'trip_mutation_confirmation',
