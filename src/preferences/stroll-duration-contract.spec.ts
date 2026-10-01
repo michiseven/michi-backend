@@ -18,6 +18,10 @@ describe('explicit stroll duration', () => {
     '散歩を20分',
     '20分間散歩',
     'stroll 20 minutes',
+    '이틀 전체 산책 시간은 총20분이야',
+    '산책 시간은 합계 20분',
+    '散歩時間は合計20分',
+    'stroll duration is a total of20 minutes',
   ])('%s', (text) => {
     expect(explicitStrollDuration(text)).toBe(20);
     expect(extractExplicitRequestContract(text).activityDurations).toEqual({ stroll: 20 });
@@ -31,6 +35,8 @@ describe('explicit stroll duration', () => {
     '산책999분',
     '산책20분은 하지 않아',
     '산책20분, 산책30분',
+    '산책 시간은 총20분 이내',
+    '산책 이동 시간은20분',
   ])('does not invent exact activity time: %s', (text) => {
     expect(explicitStrollDuration(text)).toBeUndefined();
   });

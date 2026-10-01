@@ -10,8 +10,12 @@ export function explicitStrollDuration(text: string): number | undefined {
       continue;
     const role = '(?:산책|散歩|stroll)';
     const time = '(\\d{1,3})\\s*(분|分|minutes?|mins?)';
+    // These words describe the activity's duration, not transfer time. Keep
+    // the accepted bridge explicit: arbitrary intervening prose is unsafe.
+    const durationLabel = '(?:시간|時間|duration|time)?';
+    const totalLabel = '(?:총|합계|合計|計|(?:a\\s+)?total(?:\\s+of)?)?';
     const expression = new RegExp(
-      `${role}\\s*(?:은|는|을|를|は|を)?\\s*${time}|${time}\\s*(?:동안|間|of)?\\s*${role}`,
+      `${role}\\s*${durationLabel}\\s*(?:은|는|을|를|は|を|is|of)?\\s*${totalLabel}\\s*${time}|${time}\\s*(?:동안|間|of)?\\s*${role}`,
       'giu',
     );
     for (const match of sentence.matchAll(expression)) {
