@@ -13,6 +13,30 @@ const place = (id: string, overrides: Partial<Place> = {}): Place =>
   }) as Place;
 
 describe('replacement physical venue identity', () => {
+  it('normalizes Seoul city labels and optional floor without losing the full venue identity', () => {
+    const rows = [
+      place('a', { roadAddress: '서울 마포구 마포대로14길 4' }),
+      place('b', { roadAddress: '서울특별시 마포구 마포대로14길 4 1층' }),
+      place('c', { roadAddress: '서울시 마포구 마포대로14길 4 1층' }),
+    ];
+    expect(deduplicateReplacementPlaces(rows).map((p) => p.id)).toEqual(['a']);
+  });
+  it('preserves separately known floors and rooms in the same building', () => {
+    const rows = [
+      place('a', { roadAddress: '서울 마포구 마포대로14길 4 1층 101호' }),
+      place('b', { roadAddress: '서울 마포구 마포대로14길 4 2층 101호' }),
+      place('c', { roadAddress: '서울 마포구 마포대로14길 4 1층 102호' }),
+    ];
+    expect(deduplicateReplacementPlaces(rows)).toEqual(rows);
+  });
+  it('does not let an unknown-floor representative bridge known different floors', () => {
+    const rows = [
+      place('a', { roadAddress: '서울 마포구 마포대로14길 4' }),
+      place('b', { roadAddress: '서울 마포구 마포대로14길 4 1층' }),
+      place('c', { roadAddress: '서울 마포구 마포대로14길 4 2층' }),
+    ];
+    expect(deduplicateReplacementPlaces(rows).map((p) => p.id)).toEqual(['a', 'c']);
+  });
   it('collapses 3 nearby duplicate records while retaining the representative existing ID and facts', () => {
     const first = place('first');
     const rows = [
