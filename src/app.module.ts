@@ -12,6 +12,7 @@ import { TransitModule } from './transit/transit.module';
 import { UsersModule } from './users/users.module';
 import { ChatModule } from './chat/chat.module';
 import { LogFriendsModule } from './common/telemetry/log-friends.module';
+import { PlaceSearchAgentModule } from './providers/place/place-search-agent.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { LogFriendsModule } from './common/telemetry/log-friends.module';
     TransitModule,
     UsersModule,
     ChatModule,
+    PlaceSearchAgentModule,
   ],
 })
 export class AppModule {}

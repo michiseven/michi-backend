@@ -87,7 +87,9 @@ export class DbFirstPlaceProvider implements PlaceProvider {
       : /한옥/u.test(request.query)
         ? ['한옥마을', '한옥 관광']
         : (variants[request.role ?? ''] ?? []);
-    const retryRequests = alternatives.filter((query) => query !== request.query).slice(0, 2);
+    const retryRequests = request.singleAttempt
+      ? []
+      : alternatives.filter((query) => query !== request.query).slice(0, 2);
     // NAVER returns only a small result page. A sparse exact query gets a
     // bounded retry using the same role and area; dietary terms are retained.
     if (response.places.length === 0) {

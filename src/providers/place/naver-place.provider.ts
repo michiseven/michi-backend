@@ -41,7 +41,9 @@ export class NaverPlaceProvider implements PlaceProvider {
           [ncp ? 'X-NCP-APIGW-API-KEY' : 'X-Naver-Client-Secret']:
             this.config.getOrThrow<string>('NAVER_CLIENT_SECRET'),
         },
-        signal: AbortSignal.timeout(5_000),
+        signal: request.signal
+          ? AbortSignal.any([request.signal, AbortSignal.timeout(5_000)])
+          : AbortSignal.timeout(5_000),
       });
     } catch (error) {
       throw new BadGatewayException({

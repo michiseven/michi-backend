@@ -8,6 +8,9 @@ export interface PlaceSearchRequest {
   area: string;
   limit?: number;
   role?: string;
+  /** Server-owned execution controls, never model-supplied arguments. */
+  singleAttempt?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface ProviderPlaceRecord {

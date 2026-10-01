@@ -3,6 +3,11 @@ import { PlaceNormalizer } from './place-normalizer';
 import type { Place } from '../../database/entities';
 
 describe('DB first itinerary search', () => {
+  it('does not secretly retry a search owned by the agent loop', async () => {
+    const { provider, search } = setup([]);
+    await provider.search({ area: '홍대', role: 'cafe', query: '찻집', singleAttempt: true });
+    expect(search).toHaveBeenCalledTimes(1);
+  });
   it('excludes study cafes returned by NAVER while retaining ordinary cafes', async () => {
     const { provider, search } = setup([]);
     search.mockResolvedValue({
