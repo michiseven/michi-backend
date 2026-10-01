@@ -12,6 +12,7 @@ import type {
 import { normalizeSeoulArea } from './seoul-area-normalizer';
 import { TripPreferenceSchemaValidator } from './trip-preference-schema.validator';
 import { extractExplicitRequestContract, seoulToday } from './explicit-request-contract';
+import { requestsTraditionalTea } from './traditional-tea';
 
 function addDaysSafe(isoDate: string, days: number): string {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -32,6 +33,7 @@ function diffDaysSafe(startDate: string, endDate: string): number {
 
 function normalizedInterest(value: string): string {
   const tag = value.toLowerCase();
+  if (requestsTraditionalTea(tag)) return 'cafe';
   if (/카페|cafe|coffee|喫茶/u.test(tag)) return 'cafe';
   if (/편집|독립 상점|상점|쇼핑|shop|select/u.test(tag)) return 'shopping';
   if (/미술|박물|전시|gallery|museum|ギャラリー/u.test(tag)) return 'culture';
@@ -229,6 +231,7 @@ function endTimeCoveringMeals(
  * operational preferences (quiet, stroller, rain) deliberately stay absent. */
 function explicitVisitablePreferences(text: string): string[] {
   const tags: string[] = [];
+  if (requestsTraditionalTea(text)) tags.push('traditional_tea');
   if (/한옥|韓屋|hanok/iu.test(text)) tags.push('한옥');
   if (/전통|伝統|역사|歴史/iu.test(text)) tags.push('전통');
   if (/야경|夜景|night\s*view/iu.test(text)) tags.push('night_view');
@@ -399,6 +402,14 @@ export class PreferencesService {
       const rawInterests = existing?.interests ?? rawPref.interests ?? ['cafe', 'culture'];
       const normalizedRawInterests = rawInterests
         .map(normalizedInterest)
+        .filter(
+          (interest) =>
+            !(
+              interest === 'park' &&
+              /산책|散歩|stroll/iu.test(input.text) &&
+              !/공원|公園|\bpark\b/iu.test(input.text)
+            ),
+        )
         .filter((interest) => !(interest === 'stroll' && isStrollDislike(input.text)));
       const rawPreferences = existing?.preferences ?? rawPref.preferences ?? [];
       const sourceFixedAppointments =
@@ -486,6 +497,10 @@ export class PreferencesService {
               ? normalizedRawInterests.filter((interest) => interest !== 'restaurant')
               : normalizedRawInterests),
             ...(input.mealCuisine === 'cafe_dessert' ? ['cafe'] : []),
+            ...(requestsTraditionalTea(input.text) ? ['cafe'] : []),
+            ...(/산책|散歩|stroll/iu.test(input.text) && !isStrollDislike(input.text)
+              ? ['stroll']
+              : []),
             ...(mergedMealWindows.some((meal) => !meal.cuisinePreferences?.includes('카페디저트'))
               ? ['restaurant']
               : []),
@@ -493,7 +508,14 @@ export class PreferencesService {
         ],
         preferences: [
           ...new Set([
-            ...rawPreferences,
+            ...rawPreferences.filter(
+              (tag) =>
+                !(
+                  /공원|公園|\bpark\b/iu.test(tag) &&
+                  /산책|散歩|stroll/iu.test(input.text) &&
+                  !/공원|公園|\bpark\b/iu.test(input.text)
+                ),
+            ),
             ...inferredPreferenceTags(rawInterests),
             ...explicitVisitablePreferences(input.text),
             ...(input.mealPreference === 'local_specialty' ? ['local'] : []),

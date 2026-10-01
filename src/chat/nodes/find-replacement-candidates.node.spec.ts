@@ -110,4 +110,18 @@ describe('replacement request hard constraints', () => {
     expect(result.errorCode).toBe('NO_REPLACEMENT_CANDIDATES');
     expect(result.pendingAction).toBeUndefined();
   });
+
+  it('filters ordinary cafe replacements out of an explicit traditional tea edit', async () => {
+    const { find } = setup([
+      candidate('coffee', '카멜커피', '음식점>카페'),
+      candidate('tea', '인사동 찻집', '음식점>카페>전통찻집'),
+    ]);
+    const result = (await find({
+      locale: 'ja',
+      currentTripId: 'trip',
+      messages: [new HumanMessage('伝統茶を飲める店に変えて')],
+      modification: { action: 'replace', targetStopId: 's1', replacementQuery: '伝統茶' },
+    } as ChatState)) as Partial<ChatState>;
+    expect(result.alternatives?.map((item) => item.placeId)).toEqual(['tea']);
+  });
 });

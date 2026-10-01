@@ -1,4 +1,5 @@
 import { STROLL_ACCEPTED_PLACE_CATEGORIES } from '../preferences/preference.types';
+import { hasTraditionalTeaEvidence, requestsTraditionalTea } from '../preferences/traditional-tea';
 
 export interface CompletionEligibilityInput {
   startTime: string;
@@ -66,6 +67,7 @@ export function isPublicationPolicyOnlyToken(value: string): boolean {
  */
 export function publicationThemeFromPreference(value: string): string | null {
   const compact = normalized(value);
+  if (requestsTraditionalTea(compact)) return 'traditional_tea';
   if (/산책|散歩|stroll/u.test(compact)) return 'stroll';
   if (/사진|photo|撮影/u.test(compact)) return 'photography';
   if (/벚꽃|桜|피크닉|picnic/u.test(compact)) return 'park';
@@ -87,6 +89,7 @@ export function themeMatchesStop(
   stop: CompletionEligibilityInput['stops'][number],
 ): boolean {
   const requested = normalized(theme);
+  if (requestsTraditionalTea(requested)) return hasTraditionalTeaEvidence(stop);
   if (/산책|散歩|stroll/u.test(requested)) {
     // Parks and walking trails are direct evidence. A verified heritage/tourist
     // walking destination such as a hanok village also supports a stroll;

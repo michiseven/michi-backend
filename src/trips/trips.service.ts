@@ -24,6 +24,7 @@ import {
 import { isNorthKoreaRelated } from '../common/utils/security-filter.util';
 import { findVerifiedAirport } from '../common/constants/airports.registry';
 import { PreferencesService } from '../preferences/preferences.service';
+import { hasTraditionalTeaEvidence, requestsTraditionalTea } from '../preferences/traditional-tea';
 import type { DayTripPreference, ParsedTripPreference } from '../preferences/preference.types';
 import {
   CROWD_PROVIDER,
@@ -235,6 +236,7 @@ function candidateRolesForDay(day: Pick<DayTripPreference, 'interests' | 'prefer
         .map((role) => {
           if (role === '한옥') return 'attraction';
           if (role === '전통') return 'culture';
+          if (role === 'traditional_tea') return 'cafe';
           return role;
         }),
     ),
@@ -1068,7 +1070,10 @@ export class TripsService {
           dayCandidateRoles.length > 0
             ? uniqueDayCandidates.filter(
                 (candidate) =>
-                  candidate.isAnchor || categoryMatches(candidate.category, dayCandidateRoles),
+                  (candidate.isAnchor || categoryMatches(candidate.category, dayCandidateRoles)) &&
+                  (!day.preferences.some(requestsTraditionalTea) ||
+                    candidate.category !== 'cafe' ||
+                    hasTraditionalTeaEvidence(candidate)),
               )
             : uniqueDayCandidates;
         if (categoryMatchedCandidates.length === 0) {
@@ -2151,6 +2156,15 @@ export class TripsService {
       proposedStops = currentStops;
     }
     const preferenceJson = trip.preference?.validatedJson ?? {};
+    if (
+      requestsTraditionalTea(trip.preference?.originalText ?? '') &&
+      !proposedStops.some((stop) => hasTraditionalTeaEvidence(stop.place))
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'TRADITIONAL_TEA_EVIDENCE_MISSING',
+        message: '전통차 요청은 유지됩니다. 제공 근거를 확인할 수 없는 장소로 대체할 수 없습니다.',
+      });
+    }
     const days = (
       Array.isArray(preferenceJson.days) ? preferenceJson.days : []
     ) as DayTripPreference[];

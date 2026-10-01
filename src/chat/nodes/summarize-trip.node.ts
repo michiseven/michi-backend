@@ -1,6 +1,10 @@
 import type { Repository } from 'typeorm';
 import type { Trip } from '../../database/entities';
 import type { ChatState, ChatUpdate } from '../chat-state';
+import {
+  extractExplicitRequestContract,
+  type ExplicitRequestContract,
+} from '../../preferences/explicit-request-contract';
 
 export function createSummarizeTripNode(tripsRepo: Repository<Trip>) {
   return async (state: ChatState): Promise<ChatUpdate> => {
@@ -16,7 +20,7 @@ export function createSummarizeTripNode(tripsRepo: Repository<Trip>) {
     }
     const trip = await tripsRepo.findOne({
       where: { id: state.currentTripId },
-      relations: ['stops', 'stops.place'],
+      relations: ['stops', 'stops.place', 'preference'],
     });
     const stops = [...(trip?.stops ?? [])].sort((left, right) => left.order - right.order);
     if (stops.length === 0) {
@@ -45,12 +49,49 @@ export function createSummarizeTripNode(tripsRepo: Repository<Trip>) {
       : isKo
         ? '식사 장소: 별도로 지정되지 않았습니다.'
         : '食事スポット: 個別には指定されていません。';
+    const contract =
+      (trip?.preference?.validatedJson?.explicitRequestContract as
+        ExplicitRequestContract | undefined) ??
+      extractExplicitRequestContract(trip?.preference?.originalText ?? '');
+    const conditions: string[] = [];
+    if (contract.activityWindow)
+      conditions.push(
+        isKo
+          ? `관광: ${contract.activityWindow.startTime}–${contract.activityWindow.endTime}`
+          : `観光: ${contract.activityWindow.startTime}–${contract.activityWindow.endTime}`,
+      );
+    if (contract.hotel)
+      conditions.push(
+        `${isKo ? '호텔 체크아웃' : 'ホテルチェックアウト'}: ${contract.hotel.checkoutTime ?? (isKo ? '미확인' : '未確認')}`,
+      );
+    if (contract.airport) {
+      conditions.push(
+        `${contract.airport.name} · ${contract.airport.terminal ?? (isKo ? '터미널 미확인' : 'ターミナル未確認')}`,
+      );
+      if (contract.airport.arrivalDeadline ?? contract.airport.deadline)
+        conditions.push(
+          `${isKo ? '공항 도착 마감' : '空港到着期限'}: ${contract.airport.arrivalDeadline ?? contract.airport.deadline}`,
+        );
+      if (contract.airport.flightTime)
+        conditions.push(`${isKo ? '비행 출발' : 'フライト出発'}: ${contract.airport.flightTime}`);
+      conditions.push(
+        isKo
+          ? '공항 이동과 도착 마감 충족 근거는 미확인입니다.'
+          : '空港への移動と到着期限を満たす根拠は未確認です。',
+      );
+    }
+    if (contract.luggage)
+      conditions.push(
+        isKo
+          ? '짐 보관·회수 운영시간·비용 근거는 미확인입니다.'
+          : '荷物預かり・受け取りの営業時間・料金は未確認です。',
+      );
     return {
       status: 'completed',
       errorCode: null,
       responseMessage: isKo
-        ? `현재 일정 요약\n${lines.join('\n')}\n${mealText}`
-        : `現在の旅程の要約\n${lines.join('\n')}\n${mealText}`,
+        ? `현재 일정 요약\n${conditions.join('\n')}\n${lines.join('\n')}\n${mealText}`
+        : `現在の旅程の要約\n${conditions.join('\n')}\n${lines.join('\n')}\n${mealText}`,
     };
   };
 }

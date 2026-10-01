@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { ParsedTripPreference } from '../preferences/preference.types';
+import { requestsTraditionalTea } from '../preferences/traditional-tea';
 
 const SEARCH_TERMS: Record<string, string> = {
   cafe: '카페',
@@ -9,7 +10,7 @@ const SEARCH_TERMS: Record<string, string> = {
   food: '맛집',
   restaurant: '맛집',
   park: '공원',
-  stroll: '공원',
+  stroll: '산책로',
   culture: '전시',
   night_view: '야경 명소',
   photography: '사진 명소',
@@ -30,7 +31,7 @@ const SEARCH_TERM_VARIANTS: Readonly<Record<string, readonly string[]>> = {
   park: ['공원', '산책 명소', '정원'],
   // Keep a generic stroll distinct from the explicit park role while searching
   // the park/trail/waterfront/garden vocabulary that can satisfy it.
-  stroll: ['공원', '산책로', '하천변', '정원'],
+  stroll: ['산책로', '거리 산책', '하천변', '정원'],
   culture: ['전시', '미술관', '박물관'],
   attraction: ['관광 명소', '역사 명소', '문화 명소'],
   sightseeing: ['관광 명소', '역사 명소', '문화 명소'],
@@ -43,6 +44,7 @@ const SEARCH_TERM_VARIANTS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const PREFERENCE_SEARCHES: Readonly<Record<string, { role: string; query: string }>> = {
+  traditional_tea: { role: 'cafe', query: '전통찻집' },
   한옥: { role: 'attraction', query: '한옥' },
   전통: { role: 'culture', query: '전통 공예' },
   night_view: { role: 'night_view', query: '야경 명소' },
@@ -82,6 +84,10 @@ export function generatePlaceSearchQueriesByRole(
   queries.push(...mealQueries);
   for (const interest of preference.interests) {
     if (hasSpecificMealCuisine && interest === 'restaurant') continue;
+    if (interest === 'cafe' && preference.preferences.some(requestsTraditionalTea)) {
+      queries.push({ role: 'cafe', query: '전통찻집', variationIndex });
+      continue;
+    }
     const variants = SEARCH_TERM_VARIANTS[interest];
     const query = variants?.[variationIndex % variants.length] ?? SEARCH_TERMS[interest];
     if (query) queries.push({ role: interest, query, variationIndex });

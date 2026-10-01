@@ -4,6 +4,16 @@ import {
 } from './explicit-request-contract';
 
 describe('explicit request contract', () => {
+  it.each([
+    '공덕 호텔11시 체크아웃, 캐리어, 관광11–16시, ICN T1 18시 도착 마감, 비행20:30',
+    '孔徳ホテル11時チェックアウト、キャリーケース、観光11〜16時、仁川空港第1ターミナル18時までに到着、フライト20:30',
+  ])('keeps three distinct departure clocks for %s', (text) => {
+    expect(extractExplicitRequestContract(text)).toMatchObject({
+      activityWindow: { endTime: '16:00' },
+      airport: { arrivalDeadline: '18:00', flightTime: '20:30', terminal: 'T1' },
+      hotel: { checkoutTime: '11:00' },
+    });
+  });
   it.each(['2026-10-03 토요일 카페', '3~5명과 카페', '13~25시 카페'])(
     'does not mistake a date, party range, or invalid hour for an activity window: %s',
     (text) => expect(extractExplicitRequestContract(text).activityWindow).toBeUndefined(),

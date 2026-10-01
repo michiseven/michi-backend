@@ -78,8 +78,8 @@ describe('PlaceSearchQueryGenerator', () => {
     } satisfies ParsedTripPreference;
     const generator = new PlaceSearchQueryGenerator();
 
-    expect(generator.generate(preference, 0)).toEqual(['공원']);
-    expect(generator.generate(preference, 1)).toEqual(['산책로']);
+    expect(generator.generate(preference, 0)).toEqual(['산책로']);
+    expect(generator.generate(preference, 1)).toEqual(['거리 산책']);
     expect(generator.generate(preference, 2)).toEqual(['하천변']);
     expect(generator.generate(preference, 3)).toEqual(['정원']);
   });
@@ -99,11 +99,11 @@ describe('PlaceSearchQueryGenerator', () => {
 
     expect(generatePlaceSearchQueriesByRole(preference, 1)).toEqual([
       { role: 'cafe', query: '베이커리 카페', variationIndex: 1 },
-      { role: 'stroll', query: '산책로', variationIndex: 1 },
+      { role: 'stroll', query: '거리 산책', variationIndex: 1 },
     ]);
     expect(new PlaceSearchQueryGenerator().generate(preference, 1)).toEqual([
       '베이커리 카페',
-      '산책로',
+      '거리 산책',
     ]);
   });
 

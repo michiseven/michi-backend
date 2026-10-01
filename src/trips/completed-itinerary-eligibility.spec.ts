@@ -3,6 +3,7 @@ import {
   completedItineraryEligibility,
   isPublicationPolicyOnlyToken,
   publicationThemeFromPreference,
+  themeMatchesStop,
   type CompletionEligibilityInput,
 } from './completed-itinerary-eligibility';
 
@@ -29,6 +30,42 @@ const stop = (
 });
 
 describe('completedItineraryEligibility', () => {
+  it('requires traditional tea evidence separately from a cafe or palace/history theme', () => {
+    expect(publicationThemeFromPreference('伝統茶')).toBe('traditional_tea');
+    expect(
+      themeMatchesStop(
+        'traditional_tea',
+        stop({ name: '크레마노', category: 'cafe', rawCategory: '음식점>카페' }),
+      ),
+    ).toBe(false);
+    expect(
+      themeMatchesStop(
+        'traditional_tea',
+        stop({ name: '경복궁', category: 'culture', rawCategory: '역사 문화' }),
+      ),
+    ).toBe(false);
+    expect(
+      themeMatchesStop(
+        'traditional_tea',
+        stop({ name: '인사동 찻집', category: 'cafe', rawCategory: '음식점>전통찻집' }),
+      ),
+    ).toBe(true);
+    expect(
+      completedItineraryPublicationValidation({
+        startTime: '10:00',
+        endTime: '16:00',
+        requestedMeal: true,
+        requestedThemes: ['traditional_tea', '전통'],
+        stops: [
+          stop({ name: '경복궁', category: 'culture' }),
+          stop({ name: '크레마노', category: 'cafe' }),
+          stop({ type: 'meal', category: 'restaurant' }),
+        ],
+        area: { valid: true },
+        time: { valid: true },
+      }).requiredActivities,
+    ).toEqual({ status: 'fail', missing: ['traditional_tea'] });
+  });
   it('keeps operational preferences out of required place evidence while preserving visitable themes', () => {
     expect(publicationThemeFromPreference('quiet')).toBeNull();
     expect(publicationThemeFromPreference('子ども連れ')).toBeNull();

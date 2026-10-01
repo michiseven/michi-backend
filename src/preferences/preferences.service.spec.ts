@@ -7,6 +7,57 @@ import { HeuristicRouteOptimizer } from '../recommendation/heuristic-route-optim
 import type { RankedCandidate } from '../recommendation/ports';
 
 describe('PreferencesService', () => {
+  it('retains the realistic Japanese history request as a separate traditional tea requirement', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const service = new PreferencesService(new MockTripPreferenceParser(schema), schema);
+    const result = await service.parse({
+      text: '2026年10月3日、鐘路10〜16時、景福宮必須、伝統茶と韓国料理ランチ、1人80000ウォン',
+    });
+    expect(result.preference.days?.[0]?.preferences).toContain('traditional_tea');
+    expect(result.preference.days?.[0]?.interests).toContain('cafe');
+  });
+
+  it('removes an inferred mandatory park from a street stroll request', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const baseline = await new MockTripPreferenceParser(schema).parse({
+      text: '공덕에서 짧은 거리 산책과 카페',
+    });
+    const parser = {
+      parse: jest.fn().mockResolvedValue({
+        ...baseline,
+        parserMode: 'live',
+        preference: {
+          ...baseline.preference,
+          area: '공덕',
+          startTime: '11:00',
+          endTime: '16:00',
+          budget: null,
+          companions: 'solo',
+          pace: 'relaxed',
+          interests: ['park', 'cafe'],
+          preferences: ['공원'],
+          avoid: [],
+          days: undefined,
+        },
+      }),
+    } as unknown as TripPreferenceParser;
+    const result = await new PreferencesService(parser, schema).parse({
+      text: '공덕에서 짧은 거리 산책과 카페',
+    });
+    expect(result.preference.days?.[0]?.interests).toEqual(
+      expect.arrayContaining(['stroll', 'cafe']),
+    );
+    expect(result.preference.days?.[0]?.interests).not.toContain('park');
+    expect(result.preference.days?.[0]?.preferences).not.toContain('공원');
+  });
+  it('retains an explicit park contract when the request also asks for a stroll', async () => {
+    const schema = new TripPreferenceSchemaValidator();
+    const result = await new PreferencesService(new MockTripPreferenceParser(schema), schema).parse(
+      { text: '공덕에서 공원과 카페. 공원에서 짧게 산책하고 싶어요' },
+    );
+    expect(result.preference.days?.[0]?.interests).toContain('park');
+    expect(result.preference.days?.[0]?.interests).toContain('stroll');
+  });
   it.each(['13~18시', '13〜18時', '13시부터18시까지'])(
     'fits an inferred western dinner inside the hard Hongdae window %s',
     async (range) => {

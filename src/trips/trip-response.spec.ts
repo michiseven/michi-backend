@@ -6,12 +6,38 @@ import type {
   TripStop,
 } from '../database/entities';
 import { toTripDto } from './trip-response';
+import { extractExplicitRequestContract } from '../preferences/explicit-request-contract';
 
 function dtoAirportRoles(dto: ReturnType<typeof toTripDto>): string[] {
   return (dto.airportTransfers ?? []).map((transfer) => transfer.role);
 }
 
 describe('trip API response', () => {
+  it('preserves departure clocks and hotel/luggage when the stored contract is reloaded', () => {
+    const contract = extractExplicitRequestContract(
+      '공덕 호텔11시 체크아웃, 캐리어, 관광11–16시, ICN T1 18시 도착 마감, 비행20:30',
+    );
+    const trip = {
+      id: 'departure',
+      status: 'ready',
+      travelDate: '2026-10-03',
+      startTime: '11:00',
+      endTime: '16:00',
+      stops: [],
+      preference: {
+        validatedJson: { explicitRequestContract: JSON.parse(JSON.stringify(contract)) as unknown },
+      },
+    } as unknown as Trip;
+    expect(toTripDto(trip)).toMatchObject({
+      status: 'partial',
+      explicitRequestContract: {
+        activityWindow: { endTime: '16:00' },
+        airport: { arrivalDeadline: '18:00', flightTime: '20:30' },
+        hotel: { checkoutTime: '11:00' },
+        luggage: { requested: true },
+      },
+    });
+  });
   it.each(['ready', 'modified'])(
     'exposes preserved airport and storage contract as partial for a %s row',
     (status) => {

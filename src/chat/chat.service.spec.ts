@@ -8,6 +8,7 @@ import { ChatService } from './chat.service';
 import { ChatThread, Place, Trip } from '../database/entities';
 import { TripsService } from '../trips/trips.service';
 import { PlaceDetailEnrichmentService } from '../place-details/place-detail-enrichment.service';
+import type { ChatState } from './chat-state';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -219,6 +220,30 @@ describe('ChatService', () => {
     );
     expect(selected.status).toBe('awaiting_confirmation');
     expect(selected.alternatives?.map((p) => p.placeId)).toEqual(['hongdae']);
+    const graph = (
+      service as unknown as {
+        graph: { getState: (config: unknown) => Promise<{ config: unknown; values: ChatState }> };
+      }
+    ).graph;
+    const before = await graph.getState({ configurable: { thread_id: threadId } });
+    const answer = await service.sendMessage(
+      threadId,
+      {
+        message: 'この3店のうち、伝統茶を飲めると確認できた店はどこですか？',
+        locale: 'ja',
+      },
+      { threadSecret },
+    );
+    expect(answer.status).toBe('awaiting_confirmation');
+    expect(answer.responseMessage).toContain('伝統茶を提供する根拠は未確認');
+    expect(answer.responseMessage).not.toContain('キャンセル');
+    expect(answer.pendingAction).toEqual(selected.pendingAction);
+    const after = await graph.getState({ configurable: { thread_id: threadId } });
+    expect(after.config).toEqual(before.config);
+    expect(after.values.pendingAction).toEqual(before.values.pendingAction);
+    expect(tripsService.patchStops).not.toHaveBeenCalled();
+    const rejected = await service.resumeThread(threadId, { decision: 'reject' }, { threadSecret });
+    expect(rejected.status).toBe('rejected');
     expect(tripsService.patchStops).not.toHaveBeenCalled();
   });
 
@@ -248,6 +273,73 @@ describe('ChatService', () => {
     expect(result.pendingQuestion).toBeFalsy();
     expect(tripsService.generate).not.toHaveBeenCalled();
     expect(tripsService.patchStops).not.toHaveBeenCalled();
+  });
+  it('answers the exact Japanese question about three pending candidates, then approves exactly once', async () => {
+    const tripRepo = mockTripsRepo as { findOne: jest.Mock<() => Promise<unknown>> };
+    const placeRepo = mockPlacesRepo as {
+      createQueryBuilder: () => { getMany: jest.Mock<() => Promise<unknown>> };
+    };
+    const tripsService = mockTripsService as { patchStops: jest.Mock };
+    tripRepo.findOne.mockResolvedValue({
+      id: 'trip',
+      stops: [
+        {
+          id: 'stop-1',
+          order: 1,
+          placeId: 'old',
+          place: { name: '크레마노', category: 'cafe', district: '종로구' },
+        },
+      ],
+    });
+    placeRepo.createQueryBuilder().getMany.mockResolvedValue([
+      {
+        id: 'camell',
+        name: '카멜커피',
+        category: 'cafe',
+        rawCategory: '음식점>카페',
+        district: '종로구',
+      },
+      { id: 'mk2', name: 'mk2', category: 'cafe', rawCategory: '음식점>카페', district: '종로구' },
+      {
+        id: 'aslike',
+        name: '애즈라이크',
+        category: 'cafe',
+        rawCategory: '음식점>카페',
+        district: '종로구',
+      },
+    ]);
+    const { threadId, threadSecret } = await service.createThread({
+      locale: 'ja',
+      currentTripId: 'trip',
+    });
+    const first = await service.sendMessage(
+      threadId,
+      { message: '1번째 장소를 다른 카페로 바꿔줘' },
+      { threadSecret },
+    );
+    expect(first.alternatives).toHaveLength(3);
+    const answer = await service.sendMessage(
+      threadId,
+      { locale: 'ja', message: 'この3店のうち、伝統茶を飲めると確認できた店はどこですか？' },
+      { threadSecret },
+    );
+    expect(answer.alternatives).toEqual(first.alternatives);
+    expect(answer.responseMessage.match(/伝統茶を提供する根拠は未確認/gu)).toHaveLength(3);
+    expect(answer.responseMessage).not.toContain('キャンセル');
+    expect(tripsService.patchStops).not.toHaveBeenCalled();
+    const approved = await service.resumeThread(
+      threadId,
+      { decision: 'approve', chosenPlaceId: first.alternatives![0]!.placeId },
+      { threadSecret },
+    );
+    expect(approved.status).toBe('completed');
+    expect(tripsService.patchStops).toHaveBeenCalledTimes(1);
+    await service.resumeThread(
+      threadId,
+      { decision: 'approve', chosenPlaceId: first.alternatives![0]!.placeId },
+      { threadSecret },
+    );
+    expect(tripsService.patchStops).toHaveBeenCalledTimes(1);
   });
 
   it('preserves distinct profile airports through the chat request into trip generation', async () => {

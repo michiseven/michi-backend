@@ -23,6 +23,7 @@ import type { ResumeThreadDto } from './dto/resume-thread.dto';
 import type { ChatResponseDto, CreateThreadResponseDto } from './dto/chat-response.dto';
 import { PlaceDetailEnrichmentService } from '../place-details/place-detail-enrichment.service';
 import { LogEvent, LogField } from '@logfriends/sdk';
+import { hasTraditionalTeaEvidence, requestsTraditionalTea } from '../preferences/traditional-tea';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -270,6 +271,44 @@ export class ChatService implements OnModuleInit {
       };
     }
     if (previousState?.status === 'awaiting_confirmation') {
+      const pending = previousState.pendingAction;
+      const question = /[?？]|확인|어느|어디|알려|確認|どこ|教えて/u.test(dto.message);
+      const mutation =
+        /바꿔|변경|삭제|취소|승인|キャンセル|取り消|削除|変更|承認|approve|reject/iu.test(
+          dto.message,
+        );
+      if (pending && question && !mutation) {
+        // Read the exact pending candidates without invoking/updating the
+        // interrupted graph. Its approval checkpoint and revision stay intact.
+        const isKo = locale === 'ko';
+        const teaQuestion = requestsTraditionalTea(dto.message);
+        const lines = await Promise.all(
+          pending.alternatives.map(async (candidate) => {
+            const place = await this.placesRepo.findOne({ where: { id: candidate.placeId } });
+            const teaConfirmed = place && hasTraditionalTeaEvidence(place);
+            return teaQuestion
+              ? `${candidate.name}: ${
+                  teaConfirmed
+                    ? isKo
+                      ? `제공자 등록 정보 ${place.rawCategory ?? place.name} · 실제 전통차 메뉴·제공 여부 미확인`
+                      : `提供元の登録情報 ${place.rawCategory ?? place.name} · 実際の伝統茶メニュー・提供可否は未確認`
+                    : isKo
+                      ? '전통차 제공 근거 미확인'
+                      : '伝統茶を提供する根拠は未確認'
+                }`
+              : `${candidate.name}: ${candidate.category}${candidate.address ? ` · ${candidate.address}` : ''}`;
+          }),
+        );
+        return {
+          threadId,
+          threadSecret: thread.threadSecret,
+          status: 'awaiting_confirmation',
+          responseMessage: `${lines.join('\n')}\n${isKo ? '현재 후보와 변경 승인 대기는 그대로 유지됩니다. 새 검색을 하려면 먼저 현재 변경을 승인하거나 거절해 주세요. 운영시간·메뉴·방문 가능 여부는 별도 확인이 필요합니다.' : '候補と変更承認の待機状態は維持されています。新しく検索するには、先に現在の変更を承認するか拒否してください。営業時間・メニュー・訪問可否は別途確認が必要です。'}`,
+          pendingAction: pending,
+          alternatives: pending.alternatives,
+          resultTripId: previousState.currentTripId,
+        };
+      }
       throw new ConflictException({
         code: 'THREAD_AWAITING_CONFIRMATION',
         message: 'Approve or reject the pending trip change before sending another message.',

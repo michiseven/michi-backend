@@ -217,14 +217,17 @@ export function extractExplicitRequestContract(
         new RegExp(`${TIME_PATTERN}\\s*(?:까지|まで)[^.!?。！？]{0,15}(?:공항|空港)`, 'u'),
       ) ??
       text.match(
-        new RegExp(`(?:공항|空港)[^.!?。！？]{0,8}${TIME_PATTERN}\\s*(?:까지|まで|도착|到着)`, 'u'),
+        new RegExp(
+          `(?:공항|空港|\\bICN\\b|\\bGMP\\b)[^.!?。！？]{0,30}${TIME_PATTERN}\\s*(?:까지|まで|도착|到着)`,
+          'iu',
+        ),
       ) ??
       text.match(new RegExp(`${TIME_PATTERN}\\s*(?:공항|空港)?\\s*(?:도착|到着)`, 'u'));
     const deadline = timeFromMatch(deadlineMatch);
     const flightTime = timeFromMatch(
-      text.match(new RegExp(`${TIME_PATTERN}\\s*(?:비행기|항공편|フライト|飛行機)`, 'u')) ??
+      text.match(new RegExp(`${TIME_PATTERN}\\s*(?:비행(?:기)?|항공편|フライト|飛行機)`, 'u')) ??
         text.match(
-          new RegExp(`(?:비행기|항공편|フライト|飛行機)[^.!?。！？]{0,8}${TIME_PATTERN}`, 'u'),
+          new RegExp(`(?:비행(?:기)?|항공편|フライト|飛行機)[^.!?。！？]{0,8}${TIME_PATTERN}`, 'u'),
         ),
     );
     result.airport = {

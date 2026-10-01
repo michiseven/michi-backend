@@ -639,46 +639,50 @@ describe('TripsService scoped alternatives', () => {
 });
 
 describe('TripsService atomic stop editing', () => {
-  it('does not mutate persistence when the edited route is infeasible', async () => {
-    const trip = tripFixture();
-    const transaction = jest.fn();
-    const service = new TripsService(
-      repository<Trip>({ findOne: jest.fn().mockResolvedValue(trip) }),
-      repository<TripPreference>(),
-      repository<Place>(),
-      repository<TripStop>({ manager: { transaction } }),
-      repository<RecommendationResult>(),
-      repository<RecommendationScore>(),
-      repository<ExternalDataSnapshot>(),
-      {} as PreferencesService,
-      {} as PlaceSearchQueryGenerator,
-      {} as PlaceNormalizer,
-      {} as never,
-      {} as never,
-      {
-        nearestCrowdArea: jest.fn().mockResolvedValue(null),
-        filterPlaces: jest.fn(),
-      } as never,
-      { mode: 'mock' } as never,
-      { mode: 'mock' } as PlaceProvider,
-      { mode: 'mock' } as CrowdProvider,
-      {} as CandidateRanker,
-      { optimize: jest.fn().mockReturnValue([]) },
-      { forPlaces: jest.fn() } as never,
-      new DistanceBasedRoutingProvider(),
-      accessibility as never,
-      new DeterministicItineraryExplanationProvider(),
-    );
+  it.each([false, true])(
+    'does not mutate persistence for infeasible edits, including loss of required tea: %s',
+    async (teaRequired) => {
+      const trip = tripFixture();
+      if (teaRequired) trip.preference.originalText = '종로에서 전통차와 경복궁, 한식 점심';
+      const transaction = jest.fn();
+      const service = new TripsService(
+        repository<Trip>({ findOne: jest.fn().mockResolvedValue(trip) }),
+        repository<TripPreference>(),
+        repository<Place>(),
+        repository<TripStop>({ manager: { transaction } }),
+        repository<RecommendationResult>(),
+        repository<RecommendationScore>(),
+        repository<ExternalDataSnapshot>(),
+        {} as PreferencesService,
+        {} as PlaceSearchQueryGenerator,
+        {} as PlaceNormalizer,
+        {} as never,
+        {} as never,
+        {
+          nearestCrowdArea: jest.fn().mockResolvedValue(null),
+          filterPlaces: jest.fn(),
+        } as never,
+        { mode: 'mock' } as never,
+        { mode: 'mock' } as PlaceProvider,
+        { mode: 'mock' } as CrowdProvider,
+        {} as CandidateRanker,
+        { optimize: jest.fn().mockReturnValue([]) },
+        { forPlaces: jest.fn() } as never,
+        new DistanceBasedRoutingProvider(),
+        accessibility as never,
+        new DeterministicItineraryExplanationProvider(),
+      );
 
-    await expect(
-      service.patchStops(
-        trip.id,
-        { action: 'remove', stopId: trip.stops[0]!.id },
-        'fixture-edit-token',
-      ),
-    ).rejects.toBeInstanceOf(UnprocessableEntityException);
-    expect(transaction).not.toHaveBeenCalled();
-  });
+      await expect(
+        service.patchStops(
+          trip.id,
+          { action: 'remove', stopId: trip.stops[0]!.id },
+          'fixture-edit-token',
+        ),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect(transaction).not.toHaveBeenCalled();
+    },
+  );
 
   it('generates multi-day trips and loads successfully without 500 errors', async () => {
     const trip = tripFixture();

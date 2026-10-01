@@ -14,11 +14,16 @@ import {
   seoulDistrictForArea,
 } from '../../providers/place/seoul-area-centers';
 import { resolveVerifiedPlaceCategory } from '../../providers/place/place-normalizer';
+import {
+  hasTraditionalTeaEvidence,
+  requestsTraditionalTea,
+} from '../../preferences/traditional-tea';
 
 type ReplacementCategory = 'cafe' | 'restaurant' | 'shopping' | 'culture' | 'attraction';
 
 function requestedCategory(text: string, fallback?: string | null): ReplacementCategory | null {
   const value = `${text} ${fallback ?? ''}`.normalize('NFKC').toLowerCase();
+  if (requestsTraditionalTea(text)) return 'cafe';
   // A requested destination category outranks the name/category of the old stop.
   if (/(?:식당|맛집|레스토랑|restaurant|食堂|レストラン)(?:[으]?로|に)/u.test(value)) {
     return 'restaurant';
@@ -70,7 +75,7 @@ export function createFindReplacementCandidatesNode(
     const isKo = state.locale === 'ko';
     const trip = await tripsRepo.findOne({
       where: { id: state.currentTripId },
-      relations: ['stops', 'stops.place'],
+      relations: ['stops', 'stops.place', 'preference'],
     });
 
     if (!trip) {
@@ -133,6 +138,9 @@ export function createFindReplacementCandidatesNode(
     const lastMessage = state.messages[state.messages.length - 1];
     const requestText =
       repQuery || (typeof lastMessage?.content === 'string' ? lastMessage.content : '');
+    const teaRequired =
+      requestsTraditionalTea(requestText) ||
+      (targetCategory === 'cafe' && requestsTraditionalTea(trip.preference?.originalText ?? ''));
     const category = requestedCategory(requestText) ?? requestedCategory('', targetCategory);
     const requestedArea = extractExplicitSeoulArea(requestText);
     const station = /홍대입구역|弘大入口駅/u.test(requestText) ? '홍대입구역' : requestedArea;
@@ -196,6 +204,7 @@ export function createFindReplacementCandidatesNode(
         !isNorthKoreaRelated(p.category) &&
         !isNorthKoreaRelated(p.address) &&
         matchesCategory(p, category) &&
+        (!teaRequired || hasTraditionalTeaEvidence(p)) &&
         (!(requestedArea || walkLimit) ||
           (distanceMeters(centerLocation, p.location) != null &&
             distanceMeters(centerLocation, p.location)! <= (radiusMeters ?? 0))),
@@ -204,8 +213,8 @@ export function createFindReplacementCandidatesNode(
     if (candidates.length === 0) {
       return {
         responseMessage: isKo
-          ? `요청한 조건에 맞는 검증된 대체 장소를 찾지 못했습니다. 조건이나 지역을 조금 넓혀서 다시 요청해 주세요.`
-          : '条件に合う確認済みの代替スポットが見つかりませんでした。条件やエリアを少し広げてもう一度お試しください。',
+          ? '요청한 조건의 근거를 확인할 수 있는 대체 장소를 찾지 못했습니다. 요청 조건은 유지됩니다.'
+          : '指定条件の根拠を確認できる代替スポットが見つかりませんでした。元の条件は維持されています。',
         status: 'failed',
         errorCode: 'NO_REPLACEMENT_CANDIDATES',
       };
