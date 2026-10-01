@@ -4,6 +4,48 @@ import { PlaceSearchAgentService } from './place-search-agent.service';
 import type { PlaceProvider, ProviderPlaceRecord, PlaceSearchRequest } from './place-provider';
 
 describe('PlaceSearchAgentService', () => {
+  it('keeps the original tea evidence constraint after the model broadens its search wording', async () => {
+    const create = jest
+      .fn()
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            name: 'search_places',
+            call_id: 'a',
+            arguments: '{"query":"카페"}',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        output: [
+          {
+            type: 'function_call',
+            name: 'ask_user',
+            call_id: 'b',
+            arguments: '{"question":"조건을 확인해 주세요."}',
+          },
+        ],
+      });
+    const search = jest.fn().mockResolvedValue({
+      places: [
+        {
+          provider: 'naver-local',
+          sourcePlaceId: 'coffee',
+          name: '일반 커피 카페',
+          rawCategory: '음식점>카페',
+        },
+      ],
+    });
+    const agent = new PlaceSearchAgentService(
+      { responses: { create } } as unknown as OpenAI,
+      new ConfigService({ OPENAI_MODEL: 'test-model' }),
+      { search } as unknown as PlaceProvider,
+    );
+    const result = await agent.search({ area: '공덕', role: 'cafe', query: '전통찻집' });
+    expect(result.status).toBe('clarify');
+    expect(result.observations).toEqual([{ query: '카페', status: 'empty', eligibleCount: 0 }]);
+  });
   it('uses the existing search provider as a tool and returns only provider-owned public facts', async () => {
     const record: ProviderPlaceRecord = {
       provider: 'naver-local',

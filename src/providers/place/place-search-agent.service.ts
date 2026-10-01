@@ -13,6 +13,10 @@ import {
   type PlaceSearchAgentObservation,
 } from './place-search-agent-loop';
 import { createOpenAIPlaceSearchDecider } from './openai-place-search-decider';
+import {
+  hasTraditionalTeaEvidence,
+  requestsTraditionalTea,
+} from '../../preferences/traditional-tea';
 
 export type PlaceSearchAgentPublicResult = {
   locale: 'ko' | 'ja';
@@ -114,7 +118,11 @@ export class PlaceSearchAgentService {
           singleAttempt: true,
           signal: searchSignal,
         });
-        return response.places;
+        // Search wording may change; the original evidence requirement may
+        // not. Return only eligible records so the model sees real absence.
+        return requestsTraditionalTea(request.query)
+          ? response.places.filter(hasTraditionalTeaEvidence)
+          : response.places;
       },
       signal,
     );
